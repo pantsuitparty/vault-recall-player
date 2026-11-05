@@ -1,0 +1,1076 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Vault Recall</title>
+<meta name="description" content="Offline player for Vault Recall flashcard decks.">
+<meta name="theme-color" content="#E4E9EF" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0F131B" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Recall">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="apple-touch-icon" href="./apple-touch-icon.png">
+<link rel="icon" type="image/png" href="./icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Bungee&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+*,*::before,*::after{box-sizing:border-box}
+:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:14px;-webkit-text-size-adjust:100%}
+img{max-width:100%}
+[hidden]{display:none!important}
+.install{border:2px solid var(--hl-solid)}
+</style>
+<style>
+/* Layout: one column "study desk"; notes become ruled index cards; an arcade HUD keeps score up top. */
+:root{
+  color-scheme:light;
+  --desk:#E4E9EF; --desk-dot:#CBD3DF; --surface:#F5F7FA; --line:#D2D9E4;
+  --card:#FFFDF6; --card-edge:#E6DEC9; --rule:#CADAEE; --red:#D6493F;
+  --ink:#18202E; --ink-soft:#586378;
+  --hl:#FFE14D; --hl-solid:#FFD83A; --hl-ink:#18202E;
+  --btn:#18202E; --btn-ink:#FFFDF6;
+  --good:#24935A; --warn:#C97A10; --bad:#CF3E3E; --info:#2F5FCC;
+  --shadow:0 1px 0 rgba(24,32,46,.06),0 10px 24px -12px rgba(24,32,46,.28);
+  --f-display:"Bungee","Arial Black",Impact,sans-serif;
+  --f-body:"Atkinson Hyperlegible",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --lh:2rem;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --desk:#0F131B; --desk-dot:#1B2230; --surface:#161B26; --line:#283044;
+  --card:#1B2130; --card-edge:#2A3347; --rule:#263048; --red:#EE6458;
+  --ink:#E8ECF4; --ink-soft:#97A2B7;
+  --hl:rgba(255,214,58,.34); --hl-solid:#FFD83A; --hl-ink:#18202E;
+  --btn:#FFD83A; --btn-ink:#18202E;
+  --good:#46C483; --warn:#F0A43A; --bad:#F26060; --info:#7099FF;
+  --shadow:0 1px 0 rgba(0,0,0,.4),0 14px 30px -14px rgba(0,0,0,.7);
+  color-scheme:dark}}
+:root[data-theme="dark"]{
+  --desk:#0F131B; --desk-dot:#1B2230; --surface:#161B26; --line:#283044;
+  --card:#1B2130; --card-edge:#2A3347; --rule:#263048; --red:#EE6458;
+  --ink:#E8ECF4; --ink-soft:#97A2B7;
+  --hl:rgba(255,214,58,.34); --hl-solid:#FFD83A; --hl-ink:#18202E;
+  --btn:#FFD83A; --btn-ink:#18202E;
+  --good:#46C483; --warn:#F0A43A; --bad:#F26060; --info:#7099FF;
+  --shadow:0 1px 0 rgba(0,0,0,.4),0 14px 30px -14px rgba(0,0,0,.7);
+  color-scheme:dark}
+
+*{box-sizing:border-box}
+html,body{min-height:100%}
+body{background:var(--desk);color:var(--ink);font:400 16px/1.5 var(--f-body);
+  background-image:radial-gradient(var(--desk-dot) 1px,transparent 1.2px);background-size:22px 22px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  -webkit-tap-highlight-color:transparent}
+.app{max-width:760px;margin:0 auto;padding-block:14px 40px;display:flex;flex-direction:column;gap:22px}
+button{font:inherit;color:inherit;cursor:pointer}
+:focus-visible{outline:3px solid var(--info);outline-offset:2px;border-radius:6px}
+h1,h2,h3{margin:0;text-wrap:balance;line-height:1.2}
+p{margin:0}
+.mono{font-family:var(--f-mono)}
+.muted{color:var(--ink-soft)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+
+/* HUD */
+.hud{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:10px;background:none;border:0;padding:4px 0;font-weight:700;font-size:1.05rem}
+.brand-mark{display:grid;place-items:center;width:34px;height:34px;border-radius:7px;background:var(--card);border:1px solid var(--card-edge);
+  box-shadow:var(--shadow);font:400 .8rem/1 var(--f-display);color:var(--red);position:relative;overflow:hidden}
+.brand-mark::after{content:"";position:absolute;left:0;right:0;top:9px;height:2px;background:var(--red);opacity:.85}
+.hud-stats{display:flex;align-items:center;gap:10px}
+.pill{display:flex;align-items:center;gap:6px;height:36px;padding:0 10px;border-radius:999px;background:var(--surface);border:1px solid var(--line);font-variant-numeric:tabular-nums}
+.pill b{font:400 .95rem/1 var(--f-display)}
+.streak svg{width:16px;height:16px;fill:var(--ink-soft)}
+.streak.on svg{fill:var(--red)}
+.goal svg{width:22px;height:22px;transform:rotate(-90deg)}
+.goal .bg{stroke:var(--line)} .goal .fg{stroke:var(--good);transition:stroke-dashoffset .5s}
+.lvl{gap:8px;padding-right:12px}
+.lvl-n{font:400 .85rem/1 var(--f-display)}
+.lvl-t{font-size:.8rem;color:var(--ink-soft)}
+.xpbar{width:56px;height:6px;border-radius:3px;background:var(--line);overflow:hidden}
+.xpbar i{display:block;height:100%;background:var(--hl-solid);transition:width .5s}
+.icon-btn{width:36px;height:36px;border-radius:999px;border:1px solid var(--line);background:var(--surface);display:grid;place-items:center}
+.icon-btn svg{width:17px;height:17px;fill:none;stroke:var(--ink);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+@media (max-width:520px){.lvl-t,.brand-text{display:none}.xpbar{width:40px}}
+
+/* Generic */
+.sec{font-size:.78rem;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft);font-weight:700}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:14px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 18px;border-radius:10px;border:1px solid var(--line);background:var(--surface);font-weight:700}
+.btn:hover{border-color:var(--ink-soft)}
+.btn.primary{background:var(--btn);color:var(--btn-ink);border-color:transparent}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.hl{background:var(--hl-solid);color:var(--hl-ink);border-color:transparent}
+.btn.danger{color:var(--bad)}
+.btn[disabled]{opacity:.45;cursor:not-allowed}
+.btn svg{width:17px;height:17px;fill:currentColor}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.chip{display:inline-flex;align-items:center;height:22px;padding:0 8px;border-radius:5px;font:600 .68rem/1 var(--f-mono);letter-spacing:.04em;text-transform:uppercase;background:var(--desk);color:var(--ink-soft);border:1px solid var(--line)}
+.chip.y{background:var(--hl-solid);color:var(--hl-ink);border-color:transparent}
+.back-link{align-self:flex-start;background:none;border:0;padding:6px 0;color:var(--ink-soft);font-weight:700}
+.back-link:hover{color:var(--ink)}
+.note{font-size:.9rem;color:var(--ink-soft)}
+.err{color:var(--bad);font-size:.92rem}
+
+/* Import */
+.drop{position:relative;display:flex;flex-direction:column;gap:12px;align-items:flex-start;padding:22px;border-radius:14px;background:var(--card);border:2px dashed var(--card-edge);box-shadow:var(--shadow);transition:border-color .2s,transform .2s}
+.drop.over{border-color:var(--hl-solid);transform:scale(1.01)}
+.drop h1{font:400 clamp(1.45rem,5vw,2.1rem)/1.1 var(--f-display);letter-spacing:.01em}
+.drop h1 mark{background:linear-gradient(transparent 52%,var(--hl) 52%);color:inherit;padding:0 .1em}
+.drop p{max-width:58ch;color:var(--ink-soft)}
+.paste{display:flex;flex-direction:column;gap:10px;width:100%}
+.paste textarea{width:100%;min-height:170px;resize:vertical;padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font:400 .88rem/1.55 var(--f-mono)}
+.paste input{height:42px;padding:0 12px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font:inherit}
+
+/* Deck list */
+.decks{display:flex;flex-direction:column;gap:10px}
+.deck-row{display:grid;grid-template-columns:1fr auto;gap:6px 14px;align-items:center;text-align:left;width:100%;padding:14px 16px;border-radius:12px;background:var(--card);border:1px solid var(--card-edge);box-shadow:var(--shadow)}
+.deck-row:hover{transform:translateY(-1px)}
+.deck-row h3{font-size:1.05rem;min-width:0;overflow-wrap:anywhere}
+.deck-row .counts{display:flex;gap:12px;font:600 .78rem/1 var(--f-mono);font-variant-numeric:tabular-nums;color:var(--ink-soft)}
+.deck-row .counts .due{color:var(--red)}
+.mbar{grid-column:1/-1;display:flex;height:6px;border-radius:3px;overflow:hidden;background:var(--line)}
+.mbar i{display:block;height:100%}
+.mbar .m{background:var(--good)} .mbar .l{background:var(--hl-solid)} .mbar .n{background:transparent}
+.empty{padding:20px;border-radius:12px;border:1px dashed var(--line);color:var(--ink-soft)}
+
+.cheat summary{cursor:pointer;font-weight:700;padding:4px 0}
+.cheat-grid{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:8px 16px;margin-top:12px;font-size:.9rem}
+.cheat-grid code{font:400 .82rem/1.5 var(--f-mono);background:var(--desk);padding:2px 6px;border-radius:5px;overflow-wrap:anywhere}
+.cheat-grid div{min-width:0}
+
+/* Deck view */
+.deck-head{display:flex;flex-direction:column;gap:6px}
+.deck-head h1{font-size:clamp(1.5rem,5vw,2.1rem)}
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.stat{padding:12px;border-radius:10px;background:var(--surface);border:1px solid var(--line)}
+.stat b{display:block;font:400 1.35rem/1.1 var(--f-display);font-variant-numeric:tabular-nums}
+.stat span{font-size:.78rem;color:var(--ink-soft)}
+.stat.due b{color:var(--red)} .stat.mast b{color:var(--good)}
+.modes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+@media (max-width:480px){.modes{grid-template-columns:1fr}}
+@media (max-width:560px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.mode{display:flex;flex-direction:column;gap:6px;align-items:flex-start;text-align:left;padding:16px;border-radius:12px;background:var(--card);border:1px solid var(--card-edge);box-shadow:var(--shadow);position:relative;overflow:hidden}
+.mode::before{content:"";position:absolute;left:0;right:0;top:0;height:4px;background:var(--mc)}
+.mode:hover:not([disabled]){transform:translateY(-2px)}
+.mode[disabled]{opacity:.5;cursor:not-allowed}
+.mode strong{font:400 1.15rem/1 var(--f-display);letter-spacing:.02em}
+.mode span{font-size:.88rem;color:var(--ink-soft)}
+.mode .big{font:400 .8rem/1 var(--f-mono);color:var(--ink)}
+.browse summary{cursor:pointer;font-weight:700}
+.clist{display:flex;flex-direction:column;gap:8px;margin-top:12px}
+.citem{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:start;padding:10px 12px;border-radius:10px;background:var(--surface);border:1px solid var(--line);font-size:.92rem}
+.citem .q{font-weight:700;overflow-wrap:anywhere}
+.citem .a{color:var(--ink-soft);overflow-wrap:anywhere}
+.citem .x{background:none;border:0;color:var(--ink-soft);font-size:1.1rem;line-height:1;padding:4px 6px}
+.citem .x:hover{color:var(--bad)}
+
+/* Index card */
+.stage{display:flex;flex-direction:column;gap:14px}
+.sbar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.sbar .left{display:flex;align-items:center;gap:10px}
+.combo{display:flex;align-items:center;gap:8px;font:400 .9rem/1 var(--f-display);font-variant-numeric:tabular-nums}
+.combo .x{padding:4px 8px;border-radius:6px;background:var(--hl-solid);color:var(--hl-ink)}
+.combo.hot .x{animation:pulse .5s}
+@keyframes pulse{50%{transform:scale(1.18)}}
+.flip{perspective:1400px;cursor:pointer;outline:none}
+.faces{display:grid;transition:transform .55s cubic-bezier(.2,.8,.2,1);transform-style:preserve-3d}
+.flip.on .faces{transform:rotateY(180deg)}
+.face{grid-area:1/1;backface-visibility:hidden;-webkit-backface-visibility:hidden;min-height:300px;border-radius:6px;background:var(--card);border:1px solid var(--card-edge);box-shadow:var(--shadow);display:flex;flex-direction:column;overflow:hidden}
+.face.back{transform:rotateY(180deg)}
+.card-top{display:flex;justify-content:space-between;gap:10px;align-items:center;min-height:2.6rem;padding:10px 18px 6px;border-bottom:2px solid var(--red)}
+.card-top .ctx{font:400 .72rem/1.3 var(--f-mono);color:var(--ink-soft);min-width:0;overflow-wrap:anywhere}
+.ruled{flex:1;padding:0 20px var(--lh);background-image:repeating-linear-gradient(to bottom,transparent 0,transparent calc(var(--lh) - 1px),var(--rule) calc(var(--lh) - 1px),var(--rule) var(--lh));line-height:var(--lh);font-size:1.22rem;overflow-wrap:anywhere;display:flex;flex-direction:column}
+.ruled .q{padding-top:calc(var(--lh) * .5)}
+.ruled .term{font-size:1.7rem;font-weight:700}
+.ruled .small{font-size:.92rem;color:var(--ink-soft)}
+.ruled .ans{font-weight:700}
+.ruled code{font:400 .9em var(--f-mono);background:var(--desk);padding:0 4px;border-radius:4px}
+.blank{display:inline-block;min-width:4.5ch;border-bottom:3px solid var(--red);color:transparent;line-height:1.1}
+mark{background:var(--hl);color:inherit;padding:0 .08em;border-radius:2px}
+.sweep{background-image:linear-gradient(var(--hl),var(--hl));background-repeat:no-repeat;background-position:0 88%;background-size:0% 72%;-webkit-box-decoration-break:clone;box-decoration-break:clone;padding:0 .1em}
+.flip.on .sweep{animation:sweep .6s .35s cubic-bezier(.3,.7,.2,1) forwards}
+@keyframes sweep{to{background-size:100% 72%}}
+.hint{text-align:center;font-size:.85rem;color:var(--ink-soft)}
+.kbd{font:600 .72rem/1 var(--f-mono);padding:2px 5px;border-radius:4px;border:1px solid var(--line);background:var(--surface)}
+@media (hover:none){.kbd{display:none}}
+.rates{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.rate{display:flex;flex-direction:column;align-items:center;gap:2px;padding:10px 4px;min-height:58px;border-radius:10px;border:2px solid var(--rc);background:var(--surface);font-weight:700;color:var(--rc)}
+.rate small{font:400 .72rem/1 var(--f-mono);color:var(--ink-soft)}
+.rate:hover{background:var(--rc);color:var(--card)}
+.rate:hover small{color:var(--card)}
+.floaty{position:fixed;pointer-events:none;font:400 1.3rem/1 var(--f-display);color:var(--good);animation:floaty .9s ease-out forwards;z-index:30;text-shadow:0 1px 0 var(--card)}
+@keyframes floaty{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(-46px)}}
+
+/* Quiz */
+.timer{height:8px;border-radius:4px;background:var(--line);overflow:hidden}
+.timer i{display:block;height:100%;background:var(--hl-solid);transform-origin:left}
+.timer.run i{animation:drain var(--t) linear forwards}
+@keyframes drain{from{transform:scaleX(1)}to{transform:scaleX(0);background:var(--red)}}
+.qcard{padding:0}
+.qcard .ruled{min-height:150px}
+.opts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+@media (max-width:560px){.opts{grid-template-columns:1fr}}
+.opt{display:grid;grid-template-columns:auto minmax(0,1fr);gap:10px;align-items:start;text-align:left;padding:12px 14px;border-radius:10px;border:1px solid var(--line);background:var(--surface);min-height:52px}
+.opt .k{font:600 .75rem/1.6 var(--f-mono);color:var(--ink-soft)}
+.opt .t{overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+.opt:hover:not([disabled]){border-color:var(--ink-soft)}
+.opt.right{border:2px solid var(--good);background:color-mix(in srgb,var(--good) 14%,var(--surface))}
+.opt.wrong{border:2px solid var(--bad);animation:shake .35s}
+.opt[disabled]{cursor:default}
+@keyframes shake{25%{transform:translateX(-5px)}75%{transform:translateX(5px)}}
+
+/* Match */
+.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+@media (min-width:600px){.grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.tile{min-height:96px;padding:10px;border-radius:6px;background:var(--card);border:1px solid var(--card-edge);box-shadow:var(--shadow);font-size:.86rem;line-height:1.3;text-align:left;overflow-wrap:anywhere;display:flex;flex-direction:column;gap:6px;position:relative;border-top:3px solid var(--tc)}
+.tile .tag{font:600 .62rem/1 var(--f-mono);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-soft)}
+.tile.sel{outline:3px solid var(--hl-solid);outline-offset:1px;transform:translateY(-2px)}
+.tile.bad{animation:shake .35s;outline:3px solid var(--bad)}
+.tile.done{background:var(--hl);opacity:.35;pointer-events:none;transform:scale(.96);transition:all .35s}
+
+.round{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:.85rem;color:var(--ink-soft)}
+.round b{font:400 .9rem/1.2 var(--f-display);color:var(--ink)}
+
+/* Timeline game */
+.rail{display:flex;flex-direction:column;gap:8px;margin-left:8px;padding-left:20px;border-left:3px solid var(--red);min-height:40px}
+.rail .ev{position:relative;display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;align-items:start;padding:9px 12px;border-radius:8px;background:var(--surface);border:1px solid var(--line);font-size:.92rem;animation:drop .35s ease-out}
+.rail .ev::before{content:"";position:absolute;left:-29px;top:13px;width:13px;height:13px;border-radius:50%;background:var(--red);box-shadow:0 0 0 3px var(--desk)}
+.rail .empty-rail{color:var(--ink-soft);font-size:.88rem;padding:8px 0}
+@keyframes drop{from{opacity:0;transform:translateY(-8px)}}
+.yr{font:400 .92rem/1.4 var(--f-display);color:var(--red);font-variant-numeric:tabular-nums;white-space:nowrap}
+.pool{display:flex;flex-direction:column;gap:8px}
+.evbtn{text-align:left;padding:12px 14px;border-radius:6px;background:var(--card);border:1px solid var(--card-edge);box-shadow:var(--shadow);overflow-wrap:anywhere;font-size:.95rem;line-height:1.4}
+.evbtn:hover{transform:translateY(-1px)}
+.evbtn.bad{animation:shake .35s;outline:3px solid var(--bad)}
+.pbar{height:6px;border-radius:3px;background:var(--line);overflow:hidden;width:100%}
+.pbar i{display:block;height:100%;background:var(--hl-solid);transition:width .4s}
+.more{font-size:.9rem;color:var(--ink-soft);line-height:1.5;padding-top:8px}
+
+
+/* Pictures from the note: a taped-on snapshot on the revealed side */
+.snap{float:right;width:min(40%,168px);margin:12px 0 10px 14px;padding:6px 6px 2px;background:var(--surface);border:1px solid var(--card-edge);box-shadow:var(--shadow);transform:rotate(1.8deg);position:relative;line-height:1.3}
+.snap::before{content:"";position:absolute;top:-9px;left:50%;width:58px;height:18px;transform:translateX(-50%) rotate(-3deg);background:var(--hl);opacity:.85}
+.snap img{display:block;width:100%;max-height:210px;object-fit:cover;background:var(--desk)}
+.snap figcaption{font:400 .68rem/1.5 var(--f-mono);color:var(--ink-soft);text-align:center;padding:4px 0 2px;overflow-wrap:anywhere}
+@media (max-width:480px){.snap{width:min(44%,140px)}}
+.who{clear:both;display:inline-block;margin-top:6px;font:600 .74rem/1.6 var(--f-mono);color:var(--ink-soft);border-top:2px solid var(--hl-solid);padding-top:2px}
+.pics .row>div{min-width:0;flex:1}
+.pics .chip{text-transform:none;letter-spacing:0;margin:2px 0}
+
+
+.addpic{display:inline-flex;align-items:center;gap:4px;height:24px;padding:0 8px;border-radius:5px;border:1px dashed var(--ink-soft);background:transparent;color:var(--ink-soft);font:600 .66rem/1 var(--f-mono);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap}
+.addpic svg{width:13px;height:13px;fill:currentColor}
+.addpic:hover{color:var(--ink);border-color:var(--ink)}
+.sheet{border:2px solid var(--hl-solid)}
+.field{display:flex;flex-direction:column;gap:6px}
+.field label{font-size:.85rem;font-weight:700}
+.field input{height:42px;padding:0 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);font:inherit}
+.chip.guess{cursor:pointer;text-transform:none;letter-spacing:0;font-size:.74rem;height:26px}
+.pastezone{min-height:76px;border:2px dashed var(--card-edge);border-radius:10px;background:var(--card);padding:14px;color:var(--ink);font-size:1rem;text-align:center;line-height:1.5;-webkit-user-select:text;user-select:text;outline-offset:2px;overflow:hidden;cursor:text}
+.pastezone:empty::before{content:attr(data-ph);color:var(--ink-soft);pointer-events:none}
+.pastezone:focus{border-color:var(--hl-solid);border-style:solid}
+.pastezone img{max-height:160px;max-width:100%}
+.pickprev{display:flex;justify-content:center;padding:8px;border-radius:10px;background:var(--card);border:1px solid var(--card-edge)}
+.pickprev img{max-height:240px;max-width:100%;border-radius:4px}
+.person{display:inline-flex;align-items:center;gap:6px;padding:3px 4px 3px 3px;border-radius:999px;background:var(--surface);border:1px solid var(--line);font-size:.85rem}
+.person img{width:26px;height:26px;border-radius:50%;object-fit:cover}
+.person .x{background:none;border:0;color:var(--ink-soft);font-size:1rem;line-height:1;padding:2px 6px}
+.person .x:hover{color:var(--bad)}
+
+
+.snapctl{display:flex;justify-content:center;gap:4px;padding:2px 0 3px}
+.snapctl button{background:none;border:0;padding:3px 6px;font:600 .62rem/1 var(--f-mono);text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft);border-radius:4px}
+.snapctl button:hover{color:var(--ink);background:var(--desk)}
+.flabel{font-size:.85rem;font-weight:700}
+.usepic{cursor:pointer;padding-right:10px}
+.usepic.on{border-color:var(--hl-solid);box-shadow:0 0 0 2px var(--hl-solid)}
+
+/* Summary */
+.done{align-items:center;text-align:center;padding:28px 18px;background:var(--card);border:1px solid var(--card-edge);border-radius:14px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:14px}
+.done .xp{font:400 clamp(2.6rem,12vw,4rem)/1 var(--f-display);color:var(--ink)}
+.done .xp span{background:linear-gradient(transparent 55%,var(--hl) 55%)}
+.done .grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;width:100%;max-width:440px}
+.done .grid3 div{padding:10px;border-radius:10px;background:var(--surface);border:1px solid var(--line)}
+.done .grid3 b{display:block;font:400 1.2rem/1.1 var(--f-display);font-variant-numeric:tabular-nums}
+.done .grid3 span{font-size:.75rem;color:var(--ink-soft)}
+.lvlbar{width:100%;max-width:440px;display:flex;flex-direction:column;gap:6px;font-size:.85rem;color:var(--ink-soft)}
+.lvlbar .track{height:10px;border-radius:5px;background:var(--line);overflow:hidden}
+.lvlbar i{display:block;height:100%;background:var(--hl-solid);transition:width .9s cubic-bezier(.2,.8,.2,1)}
+
+/* Claude progress */
+.work{display:flex;align-items:center;gap:14px}
+.pencil{width:38px;height:38px;flex:none;border-radius:8px;background:var(--hl-solid);display:grid;place-items:center;animation:bob 1.2s ease-in-out infinite}
+.pencil svg{width:20px;height:20px;fill:var(--hl-ink)}
+@keyframes bob{50%{transform:translateY(-4px) rotate(-6deg)}}
+.count{font:400 1.6rem/1 var(--f-display);font-variant-numeric:tabular-nums}
+
+.foot{font-size:.8rem;color:var(--ink-soft);display:flex;gap:8px;align-items:center;justify-content:center;flex-wrap:wrap;text-align:center}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--ink-soft)}
+.dot.on{background:var(--good)}
+#fx{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:40}
+.mode,.deck-row,.tile{transition:transform .15s}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="hud" id="hud"></header>
+  <main id="view" aria-live="polite"></main>
+  <footer class="foot" id="foot"></footer>
+</div>
+<canvas id="fx" aria-hidden="true"></canvas>
+<script>
+(() => {
+"use strict";
+
+/* ---------- helpers ---------- */
+const $ = s => document.querySelector(s);
+const view = $("#view"), hud = $("#hud"), foot = $("#foot");
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const uid = p => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const shuffle = a => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+const norm = s => String(s).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+const trunc = (s, n) => s.length > n ? s.slice(0, n - 1).replace(/\s+\S*$/, "") + "…" : s;
+const MIN = 6e4, DAY = 864e5, GOAL = 20;
+const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+function md(s) {
+  let h = esc(s);
+  h = h.replace(/`([^`]+)`/g, "<code>$1</code>")
+       .replace(/==([^=]+)==/g, "<mark>$1</mark>")
+       .replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>")
+       .replace(/(^|[^*\w])\*([^*\s][^*]*?)\*/g, "$1<i>$2</i>")
+       .replace(/_{3,}/g, '<span class="blank">blank</span>')
+       .replace(/\n/g, "<br>");
+  return h;
+}
+const plain = s => String(s).replace(/==|\*\*|`/g, "").replace(/(^|\W)\*([^*]+)\*/g, "$1$2");
+function dayStr(off = 0) { const d = new Date(); d.setDate(d.getDate() + off); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
+function firstSentences(s, n) { if (s.length <= n) return s; const cut = s.slice(0, n); const i = Math.max(cut.lastIndexOf(". "), cut.lastIndexOf("! "), cut.lastIndexOf("? ")); return i > n * 0.45 ? cut.slice(0, i + 1) : trunc(s, n); }
+
+/* ---------- state ---------- */
+const S = {
+  decks: {},
+  profile: { xp: 0, streak: 0, lastDay: "", todayCount: 0, best: 0 },
+  view: "library", deckId: null, session: null, sound: true, timed: true, msg: null,
+};
+
+/* ---------- spaced repetition ---------- */
+function schedule(s, r, now) {
+  s.at = now;
+  if (r === 1) { if (s.reps) s.lapses++; s.reps = 0; s.ivl = 0; s.ease = Math.max(1.3, s.ease - 0.2); s.due = now + MIN; s.state = "learning"; }
+  else if (r === 2) {
+    if (s.reps === 0) { s.due = now + 10 * MIN; s.state = "learning"; s.ease = Math.max(1.3, s.ease - 0.15); }
+    else { s.ivl = Math.max(1, Math.round(s.ivl * 1.2)); s.reps++; s.ease = Math.max(1.3, s.ease - 0.15); s.due = now + s.ivl * DAY; s.state = "review"; }
+  }
+  else if (r === 3) { s.ivl = s.reps === 0 ? 1 : s.reps === 1 ? 3 : Math.max(s.ivl + 1, Math.round(s.ivl * s.ease)); s.reps++; s.due = now + s.ivl * DAY; s.state = "review"; }
+  else { s.ivl = s.reps === 0 ? 4 : Math.max(s.ivl + 2, Math.round(s.ivl * s.ease * 1.3)); s.reps++; s.ease += 0.15; s.due = now + s.ivl * DAY; s.state = "review"; }
+  return s;
+}
+function previewIvl(s, r) {
+  const now = Date.now(), t = schedule(Object.assign({}, s), r, now), d = t.due - now;
+  if (d < 3600e3) return Math.round(d / MIN) + "m";
+  const days = Math.round(d / DAY); return days < 30 ? days + "d" : days < 365 ? Math.round(days / 30) + "mo" : (days / 365).toFixed(1) + "y";
+}
+function deckStats(d) {
+  const now = Date.now(); let n = 0, due = 0, learn = 0, mast = 0;
+  d.cards.forEach(c => { const s = c.srs; if (s.state === "new") n++; else { if (s.due <= now) due++; if (s.ivl >= 21) mast++; else learn++; } });
+  return { n, due, learn, mast, total: d.cards.length };
+}
+
+/* ---------- XP / levels / streak ---------- */
+const TITLES = ["Skimmer", "Note-taker", "Highlighter", "Linker", "Gardener", "Vault Keeper", "Archivist", "Second Brain"];
+const xpFor = L => 40 * (L - 1) * L;
+function levelOf(xp) { let L = 1; while (xp >= xpFor(L + 1)) L++; const a = xpFor(L), b = xpFor(L + 1); return { level: L, title: TITLES[Math.min(L - 1, TITLES.length - 1)], pct: Math.round((xp - a) / (b - a) * 100), toNext: b - xp }; }
+function streakNow() { const P = S.profile; return (P.lastDay === dayStr() || P.lastDay === dayStr(-1)) ? P.streak : 0; }
+function todayDone() { return S.profile.lastDay === dayStr() ? S.profile.todayCount : 0; }
+function gain(xp, n = 1) {
+  const P = S.profile, t = dayStr();
+  if (P.lastDay !== t) { P.streak = P.lastDay === dayStr(-1) ? (P.streak || 0) + 1 : 1; P.lastDay = t; P.todayCount = 0; }
+  const before = levelOf(P.xp).level, goalBefore = P.todayCount >= GOAL;
+  P.todayCount += n; P.xp += xp;
+  if (S.session) S.session.stats.xp += xp;
+  const after = levelOf(P.xp).level;
+  if (after > before) { if (S.session) S.session.stats.levelUp = after; sfx("level"); confetti(120); }
+  else if (!goalBefore && P.todayCount >= GOAL) { confetti(70); sfx("level"); }
+  saveProfile(); renderHud();
+}
+function floaty(text, el, color) {
+  if (!el) return; const r = el.getBoundingClientRect(); const f = document.createElement("div");
+  f.className = "floaty"; f.textContent = text; if (color) f.style.color = color;
+  f.style.left = (r.left + r.width / 2 - 20) + "px"; f.style.top = (r.top - 6) + "px";
+  document.body.appendChild(f); setTimeout(() => f.remove(), 950);
+}
+const comboMult = c => Math.min(3, 1 + Math.floor(c / 5) * 0.5);
+
+/* ---------- sound ---------- */
+let AC = null;
+function tone(freq, dur, type = "sine", when = 0, vol = 0.07) {
+  if (!S.sound) return;
+  try {
+    AC = AC || new (window.AudioContext || window.webkitAudioContext)();
+    const t = AC.currentTime + when, o = AC.createOscillator(), g = AC.createGain();
+    o.type = type; o.frequency.setValueAtTime(freq, t);
+    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g).connect(AC.destination); o.start(t); o.stop(t + dur + 0.02);
+  } catch (e) {}
+}
+function sfx(k) {
+  if (k === "flip") tone(520, .06, "triangle", 0, .04);
+  else if (k === "good") { tone(660, .09, "triangle"); tone(990, .12, "triangle", .07); }
+  else if (k === "bad") tone(180, .18, "sawtooth", 0, .04);
+  else if (k === "level") [523, 659, 784, 1046].forEach((f, i) => tone(f, .16, "triangle", i * .09, .06));
+}
+
+/* ---------- confetti: little index cards and highlighter strips ---------- */
+const fx = $("#fx"), fctx = fx.getContext("2d"); let parts = [], raf = 0;
+function confetti(n) {
+  if (reduced) return;
+  const dpr = devicePixelRatio || 1, W = innerWidth, H = innerHeight;
+  fx.width = W * dpr; fx.height = H * dpr; fctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const cs = getComputedStyle(document.documentElement);
+  const cols = ["--hl-solid", "--red", "--info", "--card"].map(v => cs.getPropertyValue(v).trim());
+  for (let i = 0; i < n; i++) parts.push({ x: W / 2 + (Math.random() - .5) * W * .35, y: H * .4, vx: (Math.random() - .5) * 11, vy: -Math.random() * 11 - 4,
+    w: 7 + Math.random() * 9, h: 4 + Math.random() * 5, r: Math.random() * 6, vr: (Math.random() - .5) * .35, c: cols[i % cols.length] });
+  if (!raf) raf = requestAnimationFrame(tick);
+}
+function tick() {
+  const W = innerWidth, H = innerHeight; fctx.clearRect(0, 0, W, H);
+  parts = parts.filter(p => p.y < H + 30);
+  parts.forEach(p => { p.vy += .28; p.vx *= .99; p.x += p.vx; p.y += p.vy; p.r += p.vr;
+    fctx.save(); fctx.translate(p.x, p.y); fctx.rotate(p.r); fctx.fillStyle = p.c; fctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+    fctx.fillStyle = "rgba(214,73,63,.8)"; fctx.fillRect(-p.w / 2, -p.h / 2, p.w, 1); fctx.restore(); });
+  raf = parts.length ? requestAnimationFrame(tick) : 0;
+  if (!raf) fctx.clearRect(0, 0, W, H);
+}
+
+/* ---------- icons ---------- */
+const I = {
+  flame: '<svg viewBox="0 0 24 24"><path d="M12 2c1 4 5 5.5 5 11a5 5 0 0 1-10 0c0-2.4 1-4 2.5-5.2.2 1.7 1 2.7 2 3.2-.6-3.4.3-6.6.5-9z"/></svg>',
+  sparkle: '<svg viewBox="0 0 24 24"><path d="M12 2l2.2 6.3L20 10l-5.8 1.7L12 18l-2.2-6.3L4 10l5.8-1.7zM19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9z"/></svg>',
+  pencil: '<svg viewBox="0 0 24 24"><path d="M3 17.3V21h3.7L17.8 9.9l-3.7-3.7zM20.7 7a1 1 0 0 0 0-1.4l-2.3-2.3a1 1 0 0 0-1.4 0l-1.8 1.8 3.7 3.7z"/></svg>',
+  soundOn: '<svg viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/></svg>',
+  soundOff: '<svg viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="m22 9-6 6M16 9l6 6"/></svg>',
+  image: '<svg viewBox="0 0 24 24"><path d="M4 5h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zm1 2v8.6l3.8-3.8 3 3 4.2-4.6L19 13.3V7zm4 3.2a1.6 1.6 0 1 1 0-3.2 1.6 1.6 0 0 1 0 3.2z"/></svg>',
+  file: '<svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zm0 2.5L17.5 8H14zM8 13h8v1.6H8zm0 3.4h8V18H8z"/></svg>',
+};
+
+/* ---------- render ---------- */
+function renderHud() {
+  const L = levelOf(S.profile.xp), st = streakNow(), g = Math.min(1, todayDone() / GOAL), C = 2 * Math.PI * 9;
+  hud.innerHTML = `
+    <button class="brand" data-act="home" aria-label="Vault Recall home"><span class="brand-mark">VR</span><span class="brand-text">Vault Recall</span></button>
+    <div class="hud-stats">
+      <div class="pill streak ${st ? "on" : ""}" title="${st} day streak">${I.flame}<b>${st}</b><span class="sr">day streak</span></div>
+      <div class="pill goal" title="Today: ${todayDone()} of ${GOAL} reviews">
+        <svg viewBox="0 0 24 24"><circle class="bg" cx="12" cy="12" r="9" fill="none" stroke-width="3"/><circle class="fg" cx="12" cy="12" r="9" fill="none" stroke-width="3" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - g)}"/></svg>
+        <b>${todayDone()}</b><span class="sr">of ${GOAL} reviews today</span></div>
+      <div class="pill lvl" title="${S.profile.xp} XP · ${L.toNext} XP to level ${L.level + 1}"><span class="lvl-n">Lv${L.level}</span><span class="lvl-t">${L.title}</span><span class="xpbar"><i style="width:${L.pct}%"></i></span></div>
+      <button class="icon-btn" data-act="sound" aria-label="${S.sound ? "Mute sounds" : "Turn sounds on"}">${S.sound ? I.soundOn : I.soundOff}</button>
+    </div>`;
+}
+const kindLabel = c => c.kind === "claim" ? "Claim" : c.kind === "cloze" ? "Blank" : c.kind === "list" ? "List" : c.kind === "when" ? "When" : c.def ? "Term" : "Q&A";
+/* ---------- review mode ---------- */
+function startReview() {
+  const d = S.decks[S.deckId], now = Date.now();
+  const due = d.cards.filter(c => c.srs.state !== "new" && c.srs.due <= now).sort((a, b) => a.srs.due - b.srs.due);
+  const fresh = d.cards.filter(c => c.srs.state === "new").slice(0, 15);
+  let queue = [...due, ...fresh].map(c => c.id), cram = false;
+  if (!queue.length) { queue = shuffle(d.cards).slice(0, 10).map(c => c.id); cram = true; }
+  if (!queue.length) return;
+  S.session = { mode: "review", queue, flipped: false, combo: 0, cram, stats: { n: 0, right: 0, xp: 0, best: 0 } };
+  S.view = "review"; render();
+}
+function frontCtx(c, deck) {
+  if (c.kind === "when" || !c.ctx) return deck.title;
+  const a = norm(c.answer || "");
+  if (a && norm(c.ctx).includes(a)) return deck.title;
+  if (c.year && c.kind !== "when" && /\b(year|when)\b/i.test(c.front) && c.ctx.includes(String(c.year.num))) return deck.title;
+  return c.ctx;
+}
+function chipFor(c) { return c.kind === "claim" ? "Claim" : c.kind === "cloze" ? "Fill the blank" : c.kind === "list" ? "List" : c.kind === "when" ? "When?" : c.def ? "Define" : "Question"; }
+function cardFace(c, back) {
+  const d = S.decks[S.deckId];
+  const top = `<div class="card-top"><span class="ctx">${esc(back ? (c.ctx || d.title) : frontCtx(c, d))}</span><span class="chip">${chipFor(c)}</span></div>`;
+  if (!back) {
+    const q = c.kind === "claim" ? `<div class="small q">How does your note answer this?</div><div><i>“${md(c.front)}”</i></div>`
+      : c.def && c.kind !== "cloze" ? `<div class="q term">${md(c.front)}</div>` : `<div class="q">${md(c.front)}</div>`;
+    return top + `<div class="ruled">${q}</div>`;
+  }
+  let ans;
+  if (c.kind === "claim") {
+    ans = `<div class="small q"><i>“${md(c.front)}”</i></div><div><span class="sweep">${md(c.back)}</span></div>`;
+  } else if (c.kind === "when") {
+    ans = `<div class="q"><span class="sweep ans term">${esc(c.answer)}</span></div><div class="small">${md(c.front)}</div>${c.more ? `<div class="more">${esc(c.more).split("\n").map(x => "• " + x).join("<br>")}</div>` : ""}`;
+  } else if (c.kind === "cloze") {
+    const b = esc(plain(c.back)); const a = esc(c.answer); const i = b.toLowerCase().indexOf(a.toLowerCase());
+    ans = i >= 0 ? b.slice(0, i) + `<span class="sweep ans">${b.slice(i, i + a.length)}</span>` + b.slice(i + a.length) : `<span class="sweep ans">${a}</span><br><span class="small">${b}</span>`;
+    ans = `<div class="q">${ans}</div>`;
+  } else ans = `<div class="small q">${md(c.front)}</div><div><span class="sweep">${md(c.back)}</span></div>`;
+  const pic = picHTML(c), who = whoHTML(c);
+  const top2 = top.replace(`<span class="chip">${chipFor(c)}</span></div>`, `<span class="row" style="gap:6px;flex-wrap:nowrap">${addPicBtn(c)}<span class="chip">${chipFor(c)}</span></span></div>`);
+  return top2 + `<div class="ruled">${pic || who ? `<div>${pic}${ans}${who}</div>` : ans}</div>`;
+}
+function reviewHTML() {
+  const s = S.session, d = S.decks[S.deckId], c = d.cards.find(x => x.id === s.queue[0]);
+  if (!c) return "";
+  const mult = comboMult(s.combo);
+  return `<div class="stage">
+    <div class="sbar"><div class="left"><button class="back-link" data-act="end">← End</button><span class="muted mono">${s.queue.length} left${s.cram ? " · cram" : ""}</span></div>
+      <div class="combo" id="combo">Combo ${s.combo}${mult > 1 ? ` <span class="x">×${mult}</span>` : ""}</div></div>
+    <div class="flip ${s.flipped ? "on" : ""}" id="flip" data-act="flip" tabindex="0" role="button" aria-label="${s.flipped ? "Card answer" : "Show answer"}">
+      <div class="faces"><div class="face front">${cardFace(c, false)}</div><div class="face back">${cardFace(c, true)}</div></div>
+    </div>
+    ${s.flipped ? `<div class="rates">
+      ${[["Again", "--bad"], ["Hard", "--warn"], ["Good", "--info"], ["Easy", "--good"]].map(([l, v], i) => `<button class="rate" style="--rc:var(${v})" data-act="rate" data-r="${i + 1}">${l}<small>${previewIvl(c.srs, i + 1)}</small></button>`).join("")}
+    </div><p class="hint">How well did you remember it? <span class="kbd">1</span>–<span class="kbd">4</span></p>${sheetHTML()}`
+    : `<p class="hint">Say the answer in your head, then tap the card. <span class="kbd">Space</span></p>`}
+  </div>`;
+}
+function flipCard() { const s = S.session; if (!s || s.flipped) return; s.flipped = true; sfx("flip"); render(); }
+function rate(r) {
+  closePicSheet();
+  const s = S.session, d = S.decks[S.deckId], id = s.queue.shift(), c = d.cards.find(x => x.id === id);
+  if (!c) return;
+  const now = Date.now(); schedule(c.srs, r, now);
+  if (r === 1) s.queue.splice(Math.min(s.queue.length, 3), 0, id);
+  else if (r === 2 && c.srs.state === "learning") s.queue.splice(Math.min(s.queue.length, 6), 0, id);
+  s.stats.n++;
+  if (r >= 3) { s.combo++; s.stats.right++; } else s.combo = 0;
+  s.stats.best = Math.max(s.stats.best, s.combo);
+  const xp = Math.round([2, 5, 10, 12][r - 1] * (r >= 3 ? comboMult(s.combo) : 1));
+  const btn = document.querySelector(`.rate[data-r="${r}"]`); floaty("+" + xp, btn, r >= 3 ? null : getComputedStyle(document.documentElement).getPropertyValue("--ink-soft"));
+  sfx(r >= 3 ? "good" : r === 1 ? "bad" : "flip");
+  d.updated = now; saveDeck(S.deckId, "prog");
+  gain(xp);
+  s.flipped = false;
+  if (!s.queue.length) return finish();
+  render();
+  if (s.combo && s.combo % 5 === 0) { const cb = $("#combo"); cb && cb.classList.add("hot"); }
+}
+
+/* ---------- quiz mode ---------- */
+function evidenceOf(c) {
+  const t = c.kind === "cloze" ? plain(c.back) : c.kind === "when" ? `${plain(c.front)} (${c.answer})` : c.def ? `${plain(c.front)}: ${plain(c.back)}` : c.kind === "qa" ? plain(c.back) : "";
+  return t && t.length >= 25 && t.length <= 230 ? t : "";
+}
+const kindOf = c => c.kind === "claim" ? "claim" : c.kind === "when" ? "when" : c.kind === "cloze" ? "cloze" : c.def ? "def" : "qa";
+function quizItems(d, n) {
+  const cards = d.cards, idx = new Map(cards.map((c, i) => [c.id, i]));
+  const elig = cards.filter(c => c.kind !== "list" && (c.kind === "claim" || (c.answer && c.answer.length <= 220)));
+  const by = { when: [], cloze: [], def: [], qa: [], claim: [] }; elig.forEach(c => by[kindOf(c)].push(c));
+  const ev = cards.filter(c => c.kind !== "claim" && c.arg).map(c => ({ arg: c.arg, t: evidenceOf(c) })).filter(x => x.t);
+  const years = [...new Map(cards.filter(c => c.kind === "when" && c.year).map(c => [c.year.label, c.year])).values()];
+  const ranked = elig.slice().sort((a, b) => (a.srs.reps - b.srs.reps) || (b.srs.lapses - a.srs.lapses) || (a.srs.due - b.srs.due));
+  const pick = ranked.slice(0, Math.max(n * 3, 30));
+  const out = [];
+  for (const c of shuffle(pick)) {
+    const k = kindOf(c), i0 = idx.get(c.id);
+    if (k === "claim") {
+      // pick the evidence the note uses against this claim, from among evidence used against other claims
+      const own = ev.filter(x => x.arg === c.arg), other = shuffle(ev.filter(x => x.arg !== c.arg));
+      if (!c.arg || !own.length || other.length < 2) continue;
+      const right = own[Math.floor(Math.random() * own.length)].t, wrong = [];
+      for (const x of other) { if (wrong.length >= 3) break; if (!wrong.some(w => w.arg === x.arg)) wrong.push(x); }
+      for (const x of other) { if (wrong.length >= 3) break; if (!wrong.includes(x)) wrong.push(x); }
+      out.push({ id: c.id, prompt: `<span class="small">Which point does your note use against this claim?</span><br><i>“${md(c.front)}”</i>`, ctx: c.ctx, kind: "claim", options: shuffle([right, ...wrong.map(w => w.t)]), correct: right });
+      if (out.length >= n) break; continue;
+    }
+    const correct = c.answer;
+    let ds = (c.distractors || []).filter(x => x && norm(x) !== norm(correct));
+    if (ds.length < 3) {
+      let pool;
+      if (k === "when") pool = years.filter(y => y.label !== correct).sort((a, b) => Math.abs(a.num - c.year.num) - Math.abs(b.num - c.year.num)).slice(0, 6).map(y => y.label);
+      else {
+        const src = k === "cloze" ? by.cloze.map(x => [x, x.answer]).concat(by.def.map(x => [x, x.front]))
+          : k === "def" ? by.def.map(x => [x, x.answer]) : by.qa.concat(by.def).map(x => [x, x.answer]);
+        pool = src.filter(([x, a]) => x.id !== c.id && norm(a) !== norm(correct) && a.length <= 220)
+          .sort((p, q) => Math.abs(idx.get(p[0].id) - i0) - Math.abs(idx.get(q[0].id) - i0)).slice(0, 10).map(p => p[1]);
+      }
+      pool = [...new Set(pool)].filter(x => !ds.some(y => norm(y) === norm(x)));
+      ds = ds.concat(shuffle(pool)).slice(0, 3);
+    }
+    if (!ds.length) continue;
+    const prompt = k === "def" ? `Which of these describes <b>${md(c.front)}</b>?` : k === "when" ? `<span class="small">When did this happen?</span><br>${md(c.front)}` : md(c.front);
+    out.push({ id: c.id, prompt, ctx: frontCtx(c, d), kind: k, options: shuffle([correct, ...ds.slice(0, 3)]), correct });
+    if (out.length >= n) break;
+  }
+  return out;
+}
+function startQuiz() {
+  const qs = quizItems(S.decks[S.deckId], 10); if (qs.length < 3) return;
+  S.session = { mode: "quiz", qs, i: 0, picked: null, combo: 0, t0: 0, stats: { n: 0, right: 0, xp: 0, best: 0, missed: 0 } };
+  S.view = "quiz"; render();
+}
+const QT = 15000; let qTimer = 0;
+function quizHTML() {
+  const s = S.session, q = s.qs[s.i]; const answered = s.picked !== null;
+  const chip = { cloze: "Fill the blank", def: "Define", when: "When?", qa: "Question", claim: "Claim" }[q.kind];
+  return `<div class="stage">
+    <div class="sbar"><div class="left"><button class="back-link" data-act="end">← End</button><span class="muted mono">${s.i + 1} / ${s.qs.length}</span></div>
+      <div class="row" style="gap:8px"><button class="chip ${S.timed ? "y" : ""}" data-act="timer" aria-pressed="${S.timed}" style="cursor:pointer;height:28px">Timer ${S.timed ? "on" : "off"}</button>
+      <div class="combo" id="combo">Combo ${s.combo}${comboMult(s.combo) > 1 ? ` <span class="x">×${comboMult(s.combo)}</span>` : ""}</div></div></div>
+    ${S.timed ? `<div class="timer ${answered ? "" : "run"}" style="--t:${QT}ms"><i></i></div>` : ""}
+    <div class="face qcard"><div class="card-top"><span class="ctx">${esc(q.ctx || "")}</span><span class="chip">${chip}</span></div><div class="ruled"><div class="q">${q.prompt}</div></div></div>
+    <div class="opts">${q.options.map((o, i) => {
+      let cls = ""; if (answered) { if (o === q.correct) cls = "right"; else if (i === s.picked) cls = "wrong"; }
+      return `<button class="opt ${cls}" data-act="pick" data-i="${i}" ${answered ? "disabled" : ""}><span class="k">${i + 1}</span><span class="t">${md(o)}</span></button>`;
+    }).join("")}</div>
+    ${answered ? explainHTML(q) + sheetHTML() : ""}
+    ${answered ? `<div class="row" style="justify-content:space-between"><p class="hint" style="text-align:left">${s.lastRight ? "Nice." : s.picked === -1 ? "Time’s up. That card goes back in your review pile." : "Missed. That card goes back in your review pile."}</p>
+      <button class="btn primary" data-act="next-q" id="next-q">${s.i + 1 >= s.qs.length ? "See results" : "Next question"} →</button></div>
+      <p class="hint">Take your time with the answer. <span class="kbd">Enter</span> for the next one.</p>` : ""}
+    <p class="hint" ${answered ? "hidden" : ""}>${answered ? "" : S.timed ? 'Answer within 15 seconds. Faster answers score more. <span class="kbd">1</span>–<span class="kbd">4</span>' : 'Take your time. <span class="kbd">1</span>–<span class="kbd">4</span>'}</p>
+  </div>`;
+}
+function explainHTML(q) {
+  const c = S.decks[S.deckId]?.cards.find(x => x.id === q.id); if (!c) return "";
+  let t = c.kind === "cloze" ? c.back : c.kind === "claim" ? c.back : c.kind === "when" ? (c.more || "") : c.def ? "" : c.back;
+  if (t && norm(plain(t)) === norm(plain(q.correct))) t = "";
+  const pic = picHTML(c), who = whoHTML(c);
+  const label = c.kind === "claim" ? "Your note’s answer to this claim" : c.kind === "when" && t ? "More from your note" : "From your note";
+  return `<div class="face" style="min-height:0"><div class="card-top"><span class="ctx">${label}</span>${addPicBtn(c)}</div><div class="ruled" style="font-size:1.05rem"><div>${pic}${t ? `<div class="q">${md(c.kind === "when" ? t.split("\n").map(x => "• " + x).join("\n") : t)}</div>` : `<div class="q"><b>${md(q.correct)}</b></div>`}${who}</div></div></div>`;
+}
+function nextQ() {
+  const s = S.session; if (!s || s.mode !== "quiz" || s.picked === null) return;
+  closePicSheet();
+  s.i++; s.picked = null; if (s.i >= s.qs.length) finish(); else { render(); window.scrollTo && window.scrollTo({ top: 0, behavior: reduced ? "auto" : "smooth" }); }
+}
+function startQuizTimer() {
+  clearTimeout(qTimer); const s = S.session; if (!s || s.mode !== "quiz" || s.picked !== null) return;
+  s.t0 = performance.now(); if (S.timed) qTimer = setTimeout(() => pick(-1), QT);
+}
+function pick(i) {
+  const s = S.session; if (!s || s.mode !== "quiz" || s.picked !== null) return;
+  clearTimeout(qTimer);
+  const q = s.qs[s.i], ok = i >= 0 && q.options[i] === q.correct, secs = (performance.now() - s.t0) / 1000;
+  s.picked = i; s.lastRight = ok; s.stats.n++;
+  const d = S.decks[S.deckId], c = d.cards.find(x => x.id === q.id);
+  if (ok) {
+    s.combo++; s.stats.right++; s.stats.best = Math.max(s.stats.best, s.combo);
+    const xp = Math.round((15 + (S.timed ? Math.max(0, Math.round(10 - secs * 2)) : 0)) * comboMult(s.combo));
+    render(); floaty("+" + xp, document.querySelector(".opt.right")); sfx("good"); gain(xp);
+  } else {
+    s.combo = 0; s.stats.missed++;
+    if (c && c.srs.state !== "new") { c.srs.due = Date.now(); c.srs.at = Date.now(); c.srs.state = "learning"; d.updated = Date.now(); saveDeck(S.deckId, "prog"); }
+    render(); sfx("bad"); gain(2);
+  }
+  const nb = $("#next-q"); if (nb) nb.focus({ preventScroll: true });
+}
+
+/* ---------- match mode: pairs from one stretch of the note, every answer unique ---------- */
+function pairCandidates(d) {
+  return d.cards.map((c, i) => {
+    if (c.kind === "list" || c.kind === "claim") return null;
+    let left, right, tagL, tagR, group;
+    const textGroup = !c.ai && c.year ? "yeartext" : "text";
+    if (c.kind === "when") { left = plain(c.front); right = c.answer; tagL = "Event"; tagR = "Year"; group = "when"; }
+    else if (c.kind === "cloze") { left = plain(c.front); right = plain(c.answer); tagL = "Fill in"; tagR = "Answer"; group = textGroup; }
+    else { left = plain(c.front); right = plain(c.answer); tagL = c.def ? "Term" : "Question"; tagR = c.def ? "Meaning" : "Answer"; group = textGroup; }
+    if (!left || !right || left.length > 120 || right.length > 80 || /^Explain “/.test(left)) return null;
+    const zone = group === "when" || group === "yeartext" ? "" : (c.ctx || "").split(" › ")[0];
+    return { i, id: c.id, left, right, tagL, tagR, group, zone, ctx: c.ctx || "", year: c.year };
+  }).filter(Boolean);
+}
+function matchRound(d, n = 6) {
+  const all = pairCandidates(d); if (all.length < 3) return null;
+  const groups = [...new Set(all.map(p => p.group))].filter(g => all.filter(p => p.group === g).length >= 3);
+  let best = [];
+  for (let t = 0; t < 10 && best.length < n; t++) {
+    const g = groups[Math.floor(Math.random() * groups.length)];
+    const cand = all.filter(p => p.group === g);
+    const start = Math.floor(Math.random() * cand.length);
+    const got = [], seenL = new Set(), seenR = new Set(), zone = cand[start].zone;
+    const tryAdd = p => {
+      const a = norm(p.left), b = norm(p.right);
+      if (got.includes(p) || seenL.has(a) || seenR.has(b) || seenR.has(a) || seenL.has(b)) return;
+      // an answer that also appears inside another clue in this round would be a giveaway or ambiguous
+      if (got.some(x => norm(x.left).includes(b) || a.includes(norm(x.right)))) return;
+      seenL.add(a); seenR.add(b); got.push(p);
+    };
+    // stay inside one chapter or section when it has enough pairs; spill into the next ones only if needed
+    const inZone = cand.filter(p => p.zone === zone);
+    if (inZone.length >= 4) { const s0 = Math.max(0, inZone.indexOf(cand[start]) - Math.floor(Math.random() * 3)); for (let k = 0; k < inZone.length && got.length < n; k++) tryAdd(inZone[(s0 + k) % inZone.length]); }
+    for (let k = 0; k < cand.length && got.length < n; k++) {
+      if (start + k >= cand.length && got.length >= 3) break; // don't wrap around the note unless we must
+      tryAdd(cand[(start + k) % cand.length]);
+    }
+    if (got.length > best.length) best = got;
+  }
+  if (best.length < 3) return null;
+  const ctxs = best.map(p => p.ctx).filter(Boolean);
+  let label = "";
+  if (best[0].group === "when") { const ys = best.map(p => p.year).filter(Boolean).sort((a, b) => a.num - b.num); label = ys.length ? `${ys[0].label} to ${ys[ys.length - 1].label}` : ""; }
+  else if (ctxs.length) label = ctxs[0] === ctxs[ctxs.length - 1] ? ctxs[0] : `${ctxs[0]} → ${ctxs[ctxs.length - 1]}`;
+  return { pairs: best, label: trunc(label, 70) };
+}
+function startMatch() {
+  const r = matchRound(S.decks[S.deckId]); if (!r) return;
+  const tiles = shuffle(r.pairs.flatMap(p => [{ k: uid("t"), pair: p.id, side: "q", tag: p.tagL, text: p.left }, { k: uid("t"), pair: p.id, side: "a", tag: p.tagR, text: p.right }]));
+  S.session = { mode: "match", tiles, label: r.label, sel: null, done: new Set(), bad: null, start: Date.now(), pairs: r.pairs.length, stats: { n: 0, right: 0, xp: 0, best: 0, misses: 0 } };
+  S.view = "match"; render();
+  clearInterval(S.matchTick); S.matchTick = setInterval(() => { const el = $("#mclock"); if (!el || !S.session || !S.session.start) return clearInterval(S.matchTick); el.textContent = clock(Date.now() - S.session.start); }, 250);
+}
+const clock = ms => { const s = Math.floor(ms / 1000); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); };
+function matchHTML() {
+  const s = S.session;
+  return `<div class="stage">
+    <div class="sbar"><div class="left"><button class="back-link" data-act="end">← End</button><span class="muted mono">${s.done.size} / ${s.pairs} pairs</span></div>
+      <div class="combo"><span class="mono" id="mclock">${clock(Date.now() - s.start)}</span> <span class="muted mono">· ${s.stats.misses} misses</span></div></div>
+    ${s.label ? `<div class="round"><span class="chip">This round</span><b>${esc(s.label)}</b></div>` : ""}
+    <div class="grid">${s.tiles.map(t => `<button class="tile ${s.done.has(t.pair) ? "done" : ""} ${s.sel === t.k ? "sel" : ""} ${s.bad && s.bad.includes(t.k) ? "bad" : ""}" style="--tc:var(${t.side === "q" ? "--red" : "--info"})" data-act="tile" data-k="${t.k}"><span class="tag">${esc(t.tag)}</span>${esc(t.text)}</button>`).join("")}</div>
+    <p class="hint">Tap a red-topped clue, then the blue-topped answer that goes with it.</p>
+  </div>`;
+}
+function tapTile(k) {
+  const s = S.session, t = s.tiles.find(x => x.k === k); if (!t || s.done.has(t.pair)) return;
+  s.bad = null;
+  if (!s.sel) { s.sel = k; sfx("flip"); return render(); }
+  if (s.sel === k) { s.sel = null; return render(); }
+  const a = s.tiles.find(x => x.k === s.sel);
+  if (a.side === t.side) { s.sel = k; sfx("flip"); return render(); }
+  if (a.pair === t.pair) {
+    s.done.add(t.pair); s.sel = null; s.stats.right++; s.stats.n++;
+    render(); sfx("good"); floaty("+8", document.querySelector(`[data-k="${k}"]`)); gain(8);
+    if (s.done.size === s.pairs) {
+      const secs = (Date.now() - s.start) / 1000, bonus = Math.max(10, Math.round(80 - secs - s.stats.misses * 6));
+      s.stats.time = secs; setTimeout(() => { gain(bonus, 0); s.stats.bonus = bonus; finish(); }, 500);
+    }
+  } else { s.bad = [s.sel, k]; s.sel = null; s.stats.misses++; render(); sfx("bad"); }
+}
+
+/* ---------- timeline mode ---------- */
+function timelineItems(d) {
+  return d.cards.filter(c => c.year && c.year.num).map(c => {
+    const text = plain(c.kind === "when" ? c.front : c.event || c.back);
+    if (!text || text.length > 180 || text.length < 12) return null;
+    const ys = [String(c.year.num), c.year.label];
+    if (ys.some(y => text.includes(y))) return null;
+    return { id: c.id, text, year: c.year.num, label: c.year.label };
+  }).filter(Boolean);
+}
+function startTimeline() {
+  const items = timelineItems(S.decks[S.deckId]);
+  const years = [...new Set(items.map(x => x.year))].sort((a, b) => a - b);
+  if (years.length < 4) return;
+  const want = Math.min(5, years.length);
+  const span = Math.min(years.length, Math.max(want, 8));
+  const start = Math.floor(Math.random() * (years.length - span + 1));
+  const chosenYears = shuffle(years.slice(start, start + span)).slice(0, want).sort((a, b) => a - b);
+  const events = chosenYears.map(y => { const opts = items.filter(x => x.year === y); return opts[Math.floor(Math.random() * opts.length)]; });
+  S.session = { mode: "timeline", order: events.map(e => e.id), events, pool: shuffle(events), placed: [], bad: null, start: Date.now(), stats: { n: 0, right: 0, xp: 0, best: 0, misses: 0 } };
+  S.view = "timeline"; render();
+}
+function timelineHTML() {
+  const s = S.session;
+  const placed = s.placed.map(id => s.events.find(e => e.id === id));
+  const left = s.pool.filter(e => !s.placed.includes(e.id));
+  return `<div class="stage">
+    <div class="sbar"><div class="left"><button class="back-link" data-act="end">← End</button><span class="muted mono">${s.placed.length} / ${s.events.length} placed</span></div>
+      <div class="combo"><span class="muted mono">${s.stats.misses} misses</span></div></div>
+    <div class="round"><span class="chip">Timeline</span><b>Earliest first</b></div>
+    <div class="rail">${placed.map(e => `<div class="ev"><span class="yr">${esc(e.label)}</span><span>${esc(e.text)}</span></div>`).join("") || '<div class="empty-rail">Tap the event that happened first.</div>'}</div>
+    <div class="pool">${left.map(e => `<button class="evbtn ${s.bad === e.id ? "bad" : ""}" data-act="ev" data-id="${e.id}">${esc(e.text)}</button>`).join("")}</div>
+  </div>`;
+}
+function tapEvent(id) {
+  const s = S.session; if (!s || s.mode !== "timeline") return;
+  const nextId = s.order[s.placed.length];
+  s.bad = null;
+  if (id === nextId) {
+    s.placed.push(id); s.stats.right++; s.stats.n++;
+    render(); sfx("good"); const rail = view.querySelectorAll(".rail .ev"); floaty("+10", rail[rail.length - 1]); gain(10);
+    if (s.placed.length === s.order.length) {
+      const secs = (Date.now() - s.start) / 1000, bonus = Math.max(5, Math.round(45 - s.stats.misses * 8 - secs / 3));
+      s.stats.time = secs; setTimeout(() => { gain(bonus, 0); s.stats.bonus = bonus; finish(); }, 600);
+    }
+  } else { s.bad = id; s.stats.misses++; render(); sfx("bad"); }
+}
+
+/* ---------- finish ---------- */
+function finish() {
+  closePicSheet(); clearTimeout(qTimer); clearInterval(S.matchTick);
+  const s = S.session; S.lastSession = s; S.session = null;
+  if (s.mode === "review") S.profile.best = Math.max(S.profile.best || 0, s.stats.best);
+  saveProfile(); runDeferred();
+  S.view = "done"; render(); confetti(90); sfx("level");
+}
+function doneHTML() {
+  const s = S.lastSession, L = levelOf(S.profile.xp);
+  const acc = s.stats.n ? Math.round(s.stats.right / s.stats.n * 100) : 0;
+  const heads = { review: "Review done", quiz: "Quiz done", match: "All matched", timeline: "In order" };
+  const cells = s.mode === "match" ? [[clock((s.stats.time || 0) * 1000), "Time"], [s.stats.misses, "Misses"], ["+" + (s.stats.bonus || 0), "Speed bonus"]]
+    : s.mode === "timeline" ? [[s.stats.right, "Placed"], [s.stats.misses, "Misses"], ["+" + (s.stats.bonus || 0), "Bonus"]]
+    : s.mode === "quiz" ? [[`${s.stats.right}/${s.stats.n}`, "Correct"], [s.stats.best, "Best combo"], [s.stats.missed, "Back to review"]]
+    : [[s.stats.n, "Cards seen"], [acc + "%", "Recalled"], [s.stats.best, "Best combo"]];
+  const tl = s.mode === "timeline" ? `<div class="rail" style="text-align:left;width:100%;max-width:520px">${s.events.map(e => `<div class="ev"><span class="yr">${esc(e.label)}</span><span>${esc(e.text)}</span></div>`).join("")}</div>` : "";
+  return `<section class="done">
+    <span class="chip y">${heads[s.mode]}</span>
+    <div class="xp"><span>+${s.stats.xp}</span> XP</div>
+    ${s.stats.levelUp ? `<p><b>Level ${s.stats.levelUp}: ${TITLES[Math.min(s.stats.levelUp - 1, TITLES.length - 1)]}</b></p>` : ""}
+    <div class="grid3">${cells.map(([b, l]) => `<div><b>${b}</b><span>${l}</span></div>`).join("")}</div>
+    ${tl}
+    <div class="lvlbar"><div class="row" style="justify-content:space-between"><span>Lv${L.level} · ${L.title}</span><span class="mono">${L.toNext} XP to Lv${L.level + 1}</span></div><div class="track"><i style="width:0" data-w="${L.pct}"></i></div></div>
+    <p class="muted">${todayDone() >= GOAL ? `Daily goal reached. ${streakNow()} day streak.` : `${GOAL - todayDone()} more today to hit your daily goal.`}</p>
+    <div class="row" style="justify-content:center">
+      <button class="btn primary" data-act="again" data-mode="${s.mode}">${s.mode === "review" ? "Review more" : "Play again"}</button>
+      <button class="btn" data-act="open" data-id="${S.deckId}">Back to deck</button>
+    </div></section>`;
+}
+
+const whoHTML = c => c.who ? `<div class="who">${esc(c.who)}</div>` : "";
+const fmtDate = t => t ? new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
+
+/* ---------- offline player: storage on this phone (IndexedDB, with localStorage as a fallback) ---------- */
+const DBN = "vault-recall-player";
+let DB = null;
+function openDB() {
+  return new Promise(res => {
+    try {
+      const r = indexedDB.open(DBN, 1);
+      r.onupgradeneeded = () => { r.result.createObjectStore("kv"); r.result.createObjectStore("pics"); };
+      r.onsuccess = () => res(r.result); r.onerror = () => res(null); r.onblocked = () => res(null);
+    } catch (e) { res(null); }
+  });
+}
+const kvGet = (store, key) => new Promise(res => { if (!DB) return res(undefined); try { const q = DB.transaction(store).objectStore(store).get(key); q.onsuccess = () => res(q.result); q.onerror = () => res(undefined); } catch (e) { res(undefined); } });
+const kvPut = (store, key, val) => new Promise(res => { if (!DB) return res(false); try { const tx = DB.transaction(store, "readwrite"); tx.objectStore(store).put(val, key); tx.oncomplete = () => res(true); tx.onerror = () => res(false); tx.onabort = () => res(false); } catch (e) { res(false); } });
+const kvDel = (store, key) => new Promise(res => { if (!DB) return res(false); try { const tx = DB.transaction(store, "readwrite"); tx.objectStore(store).delete(key); tx.oncomplete = () => res(true); tx.onerror = () => res(false); } catch (e) { res(false); } });
+
+const LS = "vault-recall-player:v1";
+S.meta = { packId: "", base: 0, importedAt: 0, lastExport: 0 };
+S.picURL = {};
+let saveT = 0;
+function snapshot() { return JSON.parse(JSON.stringify({ decks: S.decks, profile: S.profile, meta: S.meta })); }
+async function persistNow() {
+  clearTimeout(saveT);
+  const st = snapshot();
+  const ok = await kvPut("kv", "state", st);
+  if (!ok) { try { localStorage.setItem(LS, JSON.stringify(st)); } catch (e) {} }
+}
+// Save straight away: a phone can close the app at any moment, and each save is small.
+let saving = Promise.resolve();
+function persist() { saving = saving.then(persistNow, persistNow); return saving; }
+const saveDeck = () => persist();
+const saveProfile = () => persist();
+const runDeferred = () => {};
+const closePicSheet = () => {};
+const sheetHTML = () => "";
+const addPicBtn = () => "";
+function picHTML(c) {
+  const src = c.pic && S.picURL[c.pic];
+  if (!src) return "";
+  return `<figure class="snap"><img src="${src}" alt="${esc(c.picCaption || "Picture")}">${c.picCaption ? `<figcaption>${esc(c.picCaption)}</figcaption>` : ""}</figure>`;
+}
+async function loadState() {
+  DB = await openDB();
+  let st = await kvGet("kv", "state");
+  if (!st) { try { const raw = localStorage.getItem(LS); if (raw) st = JSON.parse(raw); } catch (e) {} }
+  if (st) { S.decks = st.decks || {}; Object.assign(S.profile, st.profile || {}); Object.assign(S.meta, st.meta || {}); }
+  try { S.sound = localStorage.getItem(LS + ":sound") !== "0"; S.timed = localStorage.getItem(LS + ":timed") !== "0"; } catch (e) {}
+  const keys = new Set(); Object.values(S.decks).forEach(d => d.cards.forEach(c => { if (c.pic) keys.add(c.pic); }));
+  for (const k of keys) { const b = await kvGet("pics", k); if (b) S.picURL[k] = URL.createObjectURL(b); }
+}
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") persistNow(); });
+window.addEventListener("pagehide", () => { persistNow(); });
+
+/* ---------- moving decks in and progress out ---------- */
+function note(text, err) { S.msg = { text, err: !!err }; if (!S.session) render(); }
+async function importPack(file) {
+  let pk;
+  try { pk = JSON.parse(await file.text()); } catch (e) { return note("That file isn’t a Vault Recall deck file. In Vault Recall, use “Send to phone” to make one.", true); }
+  if (pk && pk.format === "vault-recall-progress") return note("That’s a progress file. Bring it into Vault Recall on claude.ai with “Bring back progress”.", true);
+  if (!pk || pk.format !== "vault-recall-pack" || !Array.isArray(pk.decks)) return note("That file isn’t a Vault Recall deck file. In Vault Recall, use “Send to phone” to make one.", true);
+  note("Importing…");
+  for (const [k, dataUrl] of Object.entries(pk.pics || {})) {
+    try {
+      const blob = await (await fetch(dataUrl)).blob();
+      await kvPut("pics", k, blob);
+      if (S.picURL[k]) URL.revokeObjectURL(S.picURL[k]);
+      S.picURL[k] = URL.createObjectURL(blob);
+    } catch (e) {}
+  }
+  let added = 0, updated = 0;
+  for (const d of pk.decks) {
+    if (!d || !d.id || !Array.isArray(d.cards)) continue;
+    const old = S.decks[d.id];
+    if (old) {
+      // keep whatever was reviewed more recently, card by card
+      const om = new Map(old.cards.map(c => [c.id, c]));
+      d.cards.forEach(c => { const o = om.get(c.id); if (o && (o.srs.at || 0) > ((c.srs && c.srs.at) || 0)) c.srs = o.srs; });
+      updated++;
+    } else added++;
+    d.cards.forEach(c => { c.srs = c.srs || { state: "new", due: 0, ivl: 0, ease: 2.5, reps: 0, lapses: 0, at: 0 }; });
+    S.decks[d.id] = d;
+  }
+  const P = S.profile, Q = pk.profile || {};
+  P.xp = Math.max(P.xp || 0, Q.xp || 0);
+  if ((Q.lastDay || "") > (P.lastDay || "")) { P.lastDay = Q.lastDay; P.streak = Q.streak || 0; P.todayCount = Q.todayCount || 0; }
+  else if (Q.lastDay && Q.lastDay === P.lastDay) { P.streak = Math.max(P.streak || 0, Q.streak || 0); P.todayCount = Math.max(P.todayCount || 0, Q.todayCount || 0); }
+  P.best = Math.max(P.best || 0, Q.best || 0);
+  S.meta.packId = pk.id || ""; S.meta.base = Q.xp || 0; S.meta.importedAt = Date.now();
+  await persistNow();
+  S.view = "library";
+  note(`${added ? `Added ${added} deck${added === 1 ? "" : "s"}` : ""}${added && updated ? " and " : ""}${updated ? `${added ? "updated" : "Updated"} ${updated}` : ""}${!added && !updated ? "No decks found in that file" : ""}. Everything here works offline.`);
+}
+function reviewsSinceSend() {
+  let n = 0; const t = S.meta.lastExport || S.meta.importedAt || 0;
+  Object.values(S.decks).forEach(d => d.cards.forEach(c => { if ((c.srs.at || 0) > t) n++; }));
+  return n;
+}
+async function exportProgress() {
+  const out = {
+    format: "vault-recall-progress", version: 1, id: uid("g"), packId: S.meta.packId || "", exported: Date.now(),
+    xpGained: Math.max(0, (S.profile.xp || 0) - (S.meta.base || 0)),
+    profile: { streak: S.profile.streak || 0, lastDay: S.profile.lastDay || "", todayCount: S.profile.todayCount || 0, best: S.profile.best || 0 },
+    decks: Object.values(S.decks).map(d => ({ id: d.id, title: d.title, cards: Object.fromEntries(d.cards.filter(c => c.srs && c.srs.at).map(c => [c.id, c.srs])) })),
+  };
+  const name = `Vault Recall progress ${dayStr()}.json`;
+  const file = new File([JSON.stringify(out)], name, { type: "application/json" });
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: "Vault Recall progress" });
+      S.meta.lastExport = Date.now(); persist(); note("Progress file sent. In Vault Recall on claude.ai, use “Bring back progress” and pick it.");
+      return;
+    }
+  } catch (e) { if (e && e.name === "AbortError") return; }
+  const a = document.createElement("a"); a.href = URL.createObjectURL(file); a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  S.meta.lastExport = Date.now(); persist(); note("Progress file saved. In Vault Recall on claude.ai, use “Bring back progress” and pick it.");
+}
+
+/* ---------- offline readiness ---------- */
+const standalone = () => window.navigator.standalone === true || matchMedia("(display-mode: standalone)").matches;
+let swReady = false;
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("./sw.js").then(() => navigator.serviceWorker.ready).then(() => { swReady = true; if (!S.session) render(); }).catch(() => {});
+  if (navigator.serviceWorker.controller) swReady = true;
+}
+
+/* ---------- player screens ---------- */
+function renderFoot() {
+  const off = navigator.onLine === false;
+  const msg = swReady ? (off ? "Offline. Everything here still works." : "Ready to use offline") : "Getting ready for offline use…";
+  foot.innerHTML = `<span class="dot ${swReady ? "on" : ""}"></span><span>${msg}</span>`;
+}
+function render() {
+  renderHud(); renderFoot();
+  const v = S.view;
+  if (v === "library") view.innerHTML = libraryHTML();
+  else if (v === "deck") view.innerHTML = deckHTML();
+  else if (v === "review") view.innerHTML = reviewHTML();
+  else if (v === "quiz") { view.innerHTML = quizHTML(); startQuizTimer(); }
+  else if (v === "match") view.innerHTML = matchHTML();
+  else if (v === "timeline") view.innerHTML = timelineHTML();
+  else if (v === "done") view.innerHTML = doneHTML();
+  if (v === "done") requestAnimationFrame(() => { const i = view.querySelector(".lvlbar i"); if (i) i.style.width = i.dataset.w + "%"; });
+}
+function libraryHTML() {
+  const ids = Object.keys(S.decks).sort((a, b) => (S.decks[b].updated || 0) - (S.decks[a].updated || 0));
+  const rows = ids.map(id => {
+    const d = S.decks[id], st = deckStats(d), tot = Math.max(1, st.total);
+    return `<button class="deck-row" data-act="open" data-id="${id}">
+      <h3>${esc(d.title)}</h3>
+      <div class="counts"><span class="due">${st.due} due</span><span>${st.n} new</span><span>${st.total} cards</span></div>
+      <div class="mbar" aria-hidden="true"><i class="m" style="width:${st.mast / tot * 100}%"></i><i class="l" style="width:${st.learn / tot * 100}%"></i></div>
+    </button>`;
+  }).join("");
+  const n = reviewsSinceSend();
+  return `<div class="stage">
+    ${!standalone() ? `<section class="panel install"><b>Add this to your Home Screen</b><p class="muted">Tap the Share button, then <b>Add to Home Screen</b>. It then opens like an app and works with no internet at all, on a plane included.</p></section>` : ""}
+    ${S.msg ? `<p class="${S.msg.err ? "err" : "note"}">${esc(S.msg.text)}</p>` : ""}
+    <span class="sec">Decks on this phone</span>
+    <div class="decks">${rows || `<div class="empty">No decks yet. In Vault Recall on claude.ai, tap <b>Send to phone</b> and save the file to Files. Then come back here and tap <b>Import decks</b>.</div>`}</div>
+    <section class="panel">
+      <div class="row">
+        <label class="btn ${ids.length ? "" : "primary"}" for="pack-file">${I.file} Import decks</label>
+        <input id="pack-file" class="sr" type="file" accept=".json,application/json">
+        ${ids.length ? `<button class="btn ${n ? "primary" : ""}" data-act="export">Send progress back${n ? ` (${n})` : ""}</button>` : ""}
+      </div>
+      <p class="note">${ids.length ? `Back online, tap <b>Send progress back</b> and save the file. Then, in Vault Recall on claude.ai, use <b>Bring back progress</b>. ${n ? `${n} review${n === 1 ? "" : "s"} since your last send.` : "Nothing new to send yet."}` : "Decks and progress stay on this phone. Nothing is uploaded anywhere."}</p>
+    </section>
+  </div>`;
+}
+function deckHTML() {
+  const d = S.decks[S.deckId]; if (!d) { S.view = "library"; return libraryHTML(); }
+  const st = deckStats(d), tot = Math.max(1, st.total);
+  const reviewN = st.due + Math.min(st.n, 15);
+  const qn = quizItems(d, 10).length, mn = pairCandidates(d).length, tn = timelineItems(d);
+  const tnYears = new Set(tn.map(x => x.year)).size;
+  const shown = d.cards.slice(0, 300);
+  const list = shown.map(c => `<div class="citem" style="grid-template-columns:auto minmax(0,1fr)"><span class="chip">${kindLabel(c)}</span>
+      <div><div class="q">${md(c.front)}</div><div class="a">${md(c.kind === "cloze" || c.kind === "when" ? c.answer : trunc(c.back, 220))}</div></div></div>`).join("");
+  return `<div class="stage">
+    <button class="back-link" data-act="home">← All decks</button>
+    <div class="deck-head"><h1>${esc(d.title)}</h1><p class="muted">${st.total} cards${d.source ? " · from " + esc(d.source) : ""}</p></div>
+    <div class="stats">
+      <div class="stat due"><b>${st.due}</b><span>Due now</span></div>
+      <div class="stat"><b>${st.n}</b><span>New</span></div>
+      <div class="stat"><b>${st.learn}</b><span>Learning</span></div>
+      <div class="stat mast"><b>${st.mast}</b><span>Mastered (21d+)</span></div>
+    </div>
+    <div class="mbar" style="height:8px" aria-hidden="true"><i class="m" style="width:${st.mast / tot * 100}%"></i><i class="l" style="width:${st.learn / tot * 100}%"></i></div>
+    <div class="modes">
+      <button class="mode" style="--mc:var(--red)" data-act="start-review"><strong>Review</strong><span class="big">${reviewN ? reviewN + " cards ready" : "All caught up"}</span><span>Flip, recall, rate. Each card comes back just before you’d forget it.</span></button>
+      <button class="mode" style="--mc:var(--hl-solid)" data-act="start-quiz" ${qn >= 3 ? "" : "disabled"}><strong>Quiz</strong><span class="big">${Math.min(10, qn)} rounds · ${S.timed ? "15s each" : "no timer"}</span><span>${qn >= 3 ? "Multiple choice. Wrong options come from nearby in your notes." : "Needs a few more cards with short answers."}</span></button>
+      <button class="mode" style="--mc:var(--info)" data-act="start-match" ${mn >= 3 ? "" : "disabled"}><strong>Match</strong><span class="big">${Math.min(6, mn)} pairs per round</span><span>${mn >= 3 ? "Each round comes from one stretch of the note." : "Needs a few cards with short answers."}</span></button>
+      <button class="mode" style="--mc:var(--good)" data-act="start-timeline" ${tnYears >= 4 ? "" : "disabled"}><strong>Timeline</strong><span class="big">${tnYears >= 4 ? "5 events per round" : "No dates yet"}</span><span>${tnYears >= 4 ? "Tap the events in the order they happened." : "Needs events tied to at least four different years."}</span></button>
+    </div>
+    <details class="panel browse"><summary>Browse ${st.total} cards</summary><div class="clist">${list}${d.cards.length > shown.length ? `<p class="muted">Showing the first ${shown.length}.</p>` : ""}</div></details>
+    <div class="row"><button class="btn danger" data-act="del-deck">Remove from this phone</button></div>
+  </div>`;
+}
+
+/* ---------- events ---------- */
+function leaveSession() { clearTimeout(qTimer); clearInterval(S.matchTick); S.session = null; }
+document.addEventListener("click", e => {
+  const b = e.target.closest("[data-act]"); if (!b) return;
+  const a = b.dataset.act;
+  if (a === "home") { if (S.session) leaveSession(); S.msg = null; S.view = "library"; render(); }
+  else if (a === "open") { S.deckId = b.dataset.id; S.view = "deck"; S.msg = null; render(); }
+  else if (a === "sound") { S.sound = !S.sound; try { localStorage.setItem(LS + ":sound", S.sound ? "1" : "0"); } catch (x) {} renderHud(); if (S.sound) sfx("good"); }
+  else if (a === "timer") { S.timed = !S.timed; try { localStorage.setItem(LS + ":timed", S.timed ? "1" : "0"); } catch (x) {} render(); }
+  else if (a === "export") exportProgress();
+  else if (a === "start-review") startReview();
+  else if (a === "start-quiz") startQuiz();
+  else if (a === "start-match") startMatch();
+  else if (a === "start-timeline") startTimeline();
+  else if (a === "flip") flipCard();
+  else if (a === "rate") rate(+b.dataset.r);
+  else if (a === "pick") pick(+b.dataset.i);
+  else if (a === "next-q") nextQ();
+  else if (a === "tile") tapTile(b.dataset.k);
+  else if (a === "ev") tapEvent(b.dataset.id);
+  else if (a === "end") { const s = S.session; if (s && s.stats.n) finish(); else { leaveSession(); S.view = "deck"; render(); } }
+  else if (a === "again") { const m = b.dataset.mode; m === "quiz" ? startQuiz() : m === "match" ? startMatch() : m === "timeline" ? startTimeline() : startReview(); }
+  else if (a === "del-deck") {
+    if (b.dataset.armed) { delete S.decks[S.deckId]; persistNow(); S.view = "library"; render(); }
+    else { b.dataset.armed = "1"; b.textContent = "Tap again to remove"; setTimeout(() => { if (b.isConnected) { delete b.dataset.armed; b.textContent = "Remove from this phone"; } }, 3000); }
+  }
+});
+document.addEventListener("change", e => { if (e.target.id === "pack-file" && e.target.files.length) importPack(e.target.files[0]); });
+document.addEventListener("keydown", e => {
+  if (e.target.matches("input,textarea")) return;
+  const s = S.session; if (!s) return;
+  if (s.mode === "review") {
+    if (!s.flipped && (e.key === " " || e.key === "Enter")) { e.preventDefault(); flipCard(); }
+    else if (s.flipped && /^[1-4]$/.test(e.key)) rate(+e.key);
+  } else if (s.mode === "quiz") {
+    if (s.picked !== null && (e.key === "Enter" || e.key === " " || e.key === "ArrowRight")) { e.preventDefault(); nextQ(); }
+    else if (/^[1-4]$/.test(e.key)) { const q = s.qs[s.i]; if (+e.key <= q.options.length) pick(+e.key - 1); }
+  }
+});
+window.addEventListener("online", () => { renderFoot(); });
+window.addEventListener("offline", () => { renderFoot(); });
+
+/* ---------- boot ---------- */
+render();
+loadState().then(() => render());
+})();
+
+</script>
+</body>
+</html>
