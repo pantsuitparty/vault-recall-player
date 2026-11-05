@@ -1,5 +1,5 @@
 // Vault Recall offline player: keeps the app (and its fonts) on the phone so it opens with no connection.
-const VERSION = "vr-player-v1";
+const VERSION = "vr-player-v2";
 const FONTS = "vr-player-fonts";
 const SHELL = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png"];
 

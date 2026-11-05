@@ -290,6 +290,12 @@ mark{background:var(--hl);color:inherit;padding:0 .08em;border-radius:2px}
 .usepic{cursor:pointer;padding-right:10px}
 .usepic.on{border-color:var(--hl-solid);box-shadow:0 0 0 2px var(--hl-solid)}
 
+.phone{border-top:4px solid var(--good)}
+.phone .row>div{min-width:0}
+
+.pastezone.small{min-height:56px;padding:12px;font-size:.92rem}
+.linkish{background:none;border:0;padding:0;font:inherit;color:var(--info);text-decoration:underline;cursor:pointer}
+
 /* Summary */
 .done{align-items:center;text-align:center;padding:28px 18px;background:var(--card);border:1px solid var(--card-edge);border-radius:14px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:14px}
 .done .xp{font:400 clamp(2.6rem,12vw,4rem)/1 var(--f-display);color:var(--ink)}
@@ -356,7 +362,7 @@ function firstSentences(s, n) { if (s.length <= n) return s; const cut = s.slice
 const S = {
   decks: {},
   profile: { xp: 0, streak: 0, lastDay: "", todayCount: 0, best: 0 },
-  view: "library", deckId: null, session: null, sound: true, timed: true, msg: null,
+  view: "library", deckId: null, session: null, sound: true, timed: true, msg: null, showPaste: false,
 };
 
 /* ---------- spaced repetition ---------- */
@@ -825,6 +831,122 @@ function doneHTML() {
 const whoHTML = c => c.who ? `<div class="who">${esc(c.who)}</div>` : "";
 const fmtDate = t => t ? new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
 
+/* ---------- the offline phone player ---------- */
+// Decks go to the phone as a file; progress comes back as a file. Reviews carry a timestamp, so merging keeps
+// the more recent review of each card, and XP from the phone is credited once per deck file.
+const PLAYER_URL = "";
+let downloadsNS;
+async function initDownloads() { try { downloadsNS = window.claude && window.claude.use ? await claude.use("downloads") : null; } catch (e) { downloadsNS = null; } if (S.view === "library") render(); }
+const blobToDataURL = b => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(b); });
+async function picDataURL(v) {
+  if (!v) return null; if (v.data) return v.data;
+  if (!v.id) return null;
+  try { const r = await fetch("/_blob/" + v.id); if (r.ok) return await blobToDataURL(await r.blob()); } catch (e) {}
+  try {
+    const im = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = "/_blob/" + v.id; });
+    const c = document.createElement("canvas"); c.width = im.naturalWidth; c.height = im.naturalHeight; c.getContext("2d").drawImage(im, 0, 0);
+    return c.toDataURL("image/jpeg", 0.84);
+  } catch (e) { return null; }
+}
+async function buildPack(ids) {
+  const pack = { format: "vault-recall-pack", version: 1, id: uid("k"), exported: Date.now(), profile: Object.assign({}, S.profile), decks: [], pics: {} };
+  delete pack.profile.credited;
+  const want = {};
+  for (const id of ids) {
+    const d = S.decks[id]; if (!d) continue;
+    const list = deckPicList(d);
+    const cards = d.cards.map(c => {
+      const o = JSON.parse(JSON.stringify(c)), p = picFor(c, d);
+      if (p && p.ref) { const hit = list.find(x => x.ref === p.ref); if (hit) { const key = d.id + "|" + p.ref; want[key] = hit.file; o.pic = key; o.picCaption = p.caption || ""; } }
+      return o;
+    });
+    pack.decks.push({ id: d.id, title: d.title, source: d.source || "", updated: d.updated || 0, cards });
+  }
+  for (const [k, f] of Object.entries(want)) { const u = await picDataURL(f); if (u) pack.pics[k] = u; }
+  return pack;
+}
+// The deck file is prepared ahead of time, so the Copy button can put it on the clipboard instantly
+// (phones only allow copying straight from the tap).
+const phoneIds = () => Object.keys(S.decks).filter(id => !untouchedSample(S.decks[id]) || Object.keys(S.decks).length === 1);
+const packSig = () => JSON.stringify(phoneIds().map(id => { const d = S.decks[id]; return [id, d.updated || 0, d.cards.length, Object.keys(d.people || {}).length, Object.keys(d.images || {}).length, Object.keys(d.cardPics || {}).length]; }));
+let packCache = { sig: "", text: "", building: null };
+function preparePack() {
+  const sig = packSig();
+  if (packCache.sig === sig && (packCache.text || packCache.building)) return packCache.building || Promise.resolve(packCache.text);
+  packCache = { sig, text: "", building: null };
+  packCache.building = buildPack(phoneIds()).then(pk => { const t = JSON.stringify(pk); if (packCache.sig === sig) { packCache.text = t; packCache.building = null; packCache.n = pk.decks.length; packCache.pics = Object.keys(pk.pics).length; } return t; });
+  return packCache.building;
+}
+async function copyForPhone() {
+  const ready = packCache.sig === packSig() && packCache.text;
+  const done = () => { S.libMsg = { text: `Copied ${packCache.n || "your"} deck${packCache.n === 1 ? "" : "s"}${packCache.pics ? ` and ${packCache.pics} picture${packCache.pics === 1 ? "" : "s"}` : ""}. Open the player and tap Paste from Vault Recall.` }; render(); };
+  const fail = () => { S.libMsg = { text: "Copying didn’t work here. Use Save as a file instead.", err: true }; render(); };
+  if (!phoneIds().length) { S.libMsg = { text: "Make a deck first, then send it to your phone.", err: true }; return render(); }
+  try {
+    if (ready) { await navigator.clipboard.writeText(packCache.text); return done(); }
+    if (window.ClipboardItem && navigator.clipboard && navigator.clipboard.write) {
+      const blob = preparePack().then(t => new Blob([t], { type: "text/plain" }));
+      await navigator.clipboard.write([new ClipboardItem({ "text/plain": blob })]);
+      return done();
+    }
+    await navigator.clipboard.writeText(await preparePack()); done();
+  } catch (e) { fail(); }
+}
+async function sendToPhone() {
+  if (!downloadsNS) { S.libMsg = { text: "Saving files isn’t available here. Open Vault Recall in the Claude app or on claude.ai.", err: true }; return render(); }
+  const ids = Object.keys(S.decks).filter(id => !untouchedSample(S.decks[id]) || Object.keys(S.decks).length === 1);
+  if (!ids.length) { S.libMsg = { text: "Make a deck first, then send it to your phone.", err: true }; return render(); }
+  S.libMsg = { text: "Getting your decks ready…" }; render();
+  const pack = await buildPack(ids);
+  const pics = Object.keys(pack.pics).length;
+  try {
+    await downloadsNS.save({ filename: `Vault Recall decks ${dayStr()}.json`, data: new Blob([JSON.stringify(pack)], { type: "application/json" }) });
+    S.libMsg = { text: `Saved ${pack.decks.length} deck${pack.decks.length === 1 ? "" : "s"}${pics ? ` with ${pics} picture${pics === 1 ? "" : "s"}` : ""}. Save it to Files, then in the offline player tap Import decks.` };
+  } catch (e) { S.libMsg = e && e.code === "declined" ? null : { text: "Couldn’t save the file. Try again in a moment.", err: true }; }
+  render();
+}
+async function bringBack(file) { return bringBackText(await file.text()); }
+function bringBackText(text) {
+  let g; try { g = JSON.parse(text); } catch (e) { g = null; }
+  if (g && g.format === "vault-recall-pack") { S.libMsg = { text: "That’s a deck file for the phone. Pick the progress file the player sent back instead.", err: true }; return render(); }
+  if (!g || g.format !== "vault-recall-progress") { S.libMsg = { text: "That isn’t a progress file from the offline player.", err: true }; return render(); }
+  let n = 0, decks = 0;
+  for (const dk of g.decks || []) {
+    const d = S.decks[dk.id]; if (!d || !dk.cards) continue;
+    let ch = 0;
+    for (const c of d.cards) {
+      const r = dk.cards[c.id];
+      if (r && (r.at || 0) > (c.srs.at || 0)) { c.srs = { state: r.state || "review", due: r.due || 0, ivl: r.ivl || 0, ease: r.ease || 2.5, reps: r.reps || 0, lapses: r.lapses || 0, at: r.at }; ch++; }
+    }
+    if (ch) { d.updated = Date.now(); saveDeck(d.id, "prog"); n += ch; decks++; }
+  }
+  const P = S.profile, Q = g.profile || {};
+  P.credited = P.credited || {};
+  const key = g.packId || g.id, prev = P.credited[key] || 0, add = Math.max(0, (g.xpGained || 0) - prev);
+  P.xp = (P.xp || 0) + add; P.credited[key] = Math.max(prev, g.xpGained || 0);
+  const ks = Object.keys(P.credited); if (ks.length > 12) ks.slice(0, ks.length - 12).forEach(k => delete P.credited[k]);
+  if ((Q.lastDay || "") > (P.lastDay || "")) { P.lastDay = Q.lastDay; P.streak = Q.streak || 0; P.todayCount = Q.todayCount || 0; }
+  else if (Q.lastDay && Q.lastDay === P.lastDay) { P.streak = Math.max(P.streak || 0, Q.streak || 0); P.todayCount = Math.max(P.todayCount || 0, Q.todayCount || 0); }
+  P.best = Math.max(P.best || 0, Q.best || 0);
+  saveProfile();
+  S.libMsg = { text: n || add ? `Brought back ${n} review${n === 1 ? "" : "s"} from ${decks} deck${decks === 1 ? "" : "s"}${add ? `, plus ${add} XP` : ""}.` : "Everything in that file was already here." };
+  render();
+}
+function phoneHTML() {
+  setTimeout(() => { if (S.view === "library") preparePack().catch(() => {}); }, 0);
+  return `<section class="panel phone">
+    <div><b>Offline phone player</b><p class="muted">For planes and anywhere without internet. Copy your decks over to the player on your iPhone, study offline, then paste your progress back here.</p></div>
+    <div class="row">
+      <button class="btn primary" data-act="copy-phone">Copy for phone</button>
+      ${PLAYER_URL ? `<a class="btn" href="${PLAYER_URL}" target="_blank" rel="noopener">Open the player ↗</a>` : ""}
+    </div>
+    <div class="pastezone small" id="progzone" contenteditable="true" role="textbox" aria-label="Paste progress from the player here" data-ph="Back from offline? Copy your progress in the player, then tap here and Paste."></div>
+    <p class="note">Prefer files? <button class="linkish" data-act="send-phone">Save decks as a file</button> · <label class="linkish" for="back-file">Choose a progress file</label><input id="back-file" class="sr" type="file" accept=".json,application/json"></p>
+    ${PLAYER_URL ? `<p class="note">Player address: <span class="mono">${esc(PLAYER_URL.replace(/^https:\/\//, ""))}</span>. Open it in Safari once and add it to your Home Screen.</p>` : ""}
+    ${S.libMsg ? `<p class="${S.libMsg.err ? "err" : "note"}">${esc(S.libMsg.text)}</p>` : ""}
+  </section>`;
+}
+
 /* ---------- offline player: storage on this phone (IndexedDB, with localStorage as a fallback) ---------- */
 const DBN = "vault-recall-player";
 let DB = null;
@@ -880,11 +1002,18 @@ window.addEventListener("pagehide", () => { persistNow(); });
 
 /* ---------- moving decks in and progress out ---------- */
 function note(text, err) { S.msg = { text, err: !!err }; if (!S.session) render(); }
-async function importPack(file) {
+async function importPack(file) { return importPackText(await file.text()); }
+async function pasteFromVault() {
+  let t = "";
+  try { t = await navigator.clipboard.readText(); } catch (e) { S.showPaste = true; return note("Your phone didn’t allow that. Tap the box below, then tap Paste.", true); }
+  if (!t) return note("The clipboard is empty. In Vault Recall, tap Copy for phone first.", true);
+  return importPackText(t);
+}
+async function importPackText(text) {
   let pk;
-  try { pk = JSON.parse(await file.text()); } catch (e) { return note("That file isn’t a Vault Recall deck file. In Vault Recall, use “Send to phone” to make one.", true); }
-  if (pk && pk.format === "vault-recall-progress") return note("That’s a progress file. Bring it into Vault Recall on claude.ai with “Bring back progress”.", true);
-  if (!pk || pk.format !== "vault-recall-pack" || !Array.isArray(pk.decks)) return note("That file isn’t a Vault Recall deck file. In Vault Recall, use “Send to phone” to make one.", true);
+  try { pk = JSON.parse(text); } catch (e) { return note("That isn’t from Vault Recall. In Vault Recall, tap Copy for phone, then come back and paste.", true); }
+  if (pk && pk.format === "vault-recall-progress") return note("That’s your progress, which goes the other way. Paste it into Vault Recall on claude.ai.", true);
+  if (!pk || pk.format !== "vault-recall-pack" || !Array.isArray(pk.decks)) return note("That isn’t from Vault Recall. In Vault Recall, tap Copy for phone, then come back and paste.", true);
   note("Importing…");
   for (const [k, dataUrl] of Object.entries(pk.pics || {})) {
     try {
@@ -921,6 +1050,18 @@ function reviewsSinceSend() {
   let n = 0; const t = S.meta.lastExport || S.meta.importedAt || 0;
   Object.values(S.decks).forEach(d => d.cards.forEach(c => { if ((c.srs.at || 0) > t) n++; }));
   return n;
+}
+function progressJSON() {
+  return JSON.stringify({
+    format: "vault-recall-progress", version: 1, id: uid("g"), packId: S.meta.packId || "", exported: Date.now(),
+    xpGained: Math.max(0, (S.profile.xp || 0) - (S.meta.base || 0)),
+    profile: { streak: S.profile.streak || 0, lastDay: S.profile.lastDay || "", todayCount: S.profile.todayCount || 0, best: S.profile.best || 0 },
+    decks: Object.values(S.decks).map(d => ({ id: d.id, title: d.title, cards: Object.fromEntries(d.cards.filter(c => c.srs && c.srs.at).map(c => [c.id, c.srs])) })),
+  });
+}
+async function copyProgress() {
+  try { await navigator.clipboard.writeText(progressJSON()); S.meta.lastExport = Date.now(); persist(); note("Progress copied. In Vault Recall on claude.ai, tap the paste box under Offline phone player and Paste."); }
+  catch (e) { exportProgress(); }
 }
 async function exportProgress() {
   const out = {
@@ -986,11 +1127,12 @@ function libraryHTML() {
     <div class="decks">${rows || `<div class="empty">No decks yet. In Vault Recall on claude.ai, tap <b>Send to phone</b> and save the file to Files. Then come back here and tap <b>Import decks</b>.</div>`}</div>
     <section class="panel">
       <div class="row">
-        <label class="btn ${ids.length ? "" : "primary"}" for="pack-file">${I.file} Import decks</label>
-        <input id="pack-file" class="sr" type="file" accept=".json,application/json">
-        ${ids.length ? `<button class="btn ${n ? "primary" : ""}" data-act="export">Send progress back${n ? ` (${n})` : ""}</button>` : ""}
+        <button class="btn ${ids.length ? "" : "primary"}" data-act="paste-vault">Paste from Vault Recall</button>
+        ${ids.length ? `<button class="btn ${n ? "primary" : ""}" data-act="copy-progress">Copy progress${n ? ` (${n})` : ""}</button>` : ""}
       </div>
-      <p class="note">${ids.length ? `Back online, tap <b>Send progress back</b> and save the file. Then, in Vault Recall on claude.ai, use <b>Bring back progress</b>. ${n ? `${n} review${n === 1 ? "" : "s"} since your last send.` : "Nothing new to send yet."}` : "Decks and progress stay on this phone. Nothing is uploaded anywhere."}</p>
+      ${S.showPaste ? `<div class="pastezone small" id="packzone" contenteditable="true" role="textbox" aria-label="Paste from Vault Recall here" data-ph="Tap here, then tap Paste"></div>` : ""}
+      <p class="note">${ids.length ? `To add or update decks: in Vault Recall tap <b>Copy for phone</b>, then <b>Paste from Vault Recall</b> here. To send progress back: tap <b>Copy progress</b>, then paste it into Vault Recall. ${n ? `${n} review${n === 1 ? "" : "s"} since your last copy.` : "Nothing new to send yet."}` : "In Vault Recall on claude.ai, tap <b>Copy for phone</b>. Then come back here and tap <b>Paste from Vault Recall</b>. Decks and progress stay on this phone."}</p>
+      <p class="note">Prefer files? <label class="linkish" for="pack-file">Import a deck file</label><input id="pack-file" class="sr" type="file" accept=".json,application/json">${ids.length ? ` · <button class="linkish" data-act="export">Save progress as a file</button>` : ""}</p>
     </section>
   </div>`;
 }
@@ -1034,6 +1176,8 @@ document.addEventListener("click", e => {
   else if (a === "sound") { S.sound = !S.sound; try { localStorage.setItem(LS + ":sound", S.sound ? "1" : "0"); } catch (x) {} renderHud(); if (S.sound) sfx("good"); }
   else if (a === "timer") { S.timed = !S.timed; try { localStorage.setItem(LS + ":timed", S.timed ? "1" : "0"); } catch (x) {} render(); }
   else if (a === "export") exportProgress();
+  else if (a === "paste-vault") pasteFromVault();
+  else if (a === "copy-progress") copyProgress();
   else if (a === "start-review") startReview();
   else if (a === "start-quiz") startQuiz();
   else if (a === "start-match") startMatch();
@@ -1050,6 +1194,12 @@ document.addEventListener("click", e => {
     if (b.dataset.armed) { delete S.decks[S.deckId]; persistNow(); S.view = "library"; render(); }
     else { b.dataset.armed = "1"; b.textContent = "Tap again to remove"; setTimeout(() => { if (b.isConnected) { delete b.dataset.armed; b.textContent = "Remove from this phone"; } }, 3000); }
   }
+});
+document.addEventListener("paste", e => {
+  if (e.target.matches && e.target.matches("input,textarea")) return;
+  const t = e.clipboardData && e.clipboardData.getData("text/plain");
+  if (t && /"format"\s*:\s*"vault-recall-/.test(t.slice(0, 200))) { e.preventDefault(); S.showPaste = false; importPackText(t); }
+  else if (e.target.id === "packzone") { e.preventDefault(); note("That isn’t from Vault Recall. In Vault Recall, tap Copy for phone first.", true); }
 });
 document.addEventListener("change", e => { if (e.target.id === "pack-file" && e.target.files.length) importPack(e.target.files[0]); });
 document.addEventListener("keydown", e => {
