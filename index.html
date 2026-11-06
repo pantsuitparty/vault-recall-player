@@ -296,6 +296,26 @@ mark{background:var(--hl);color:inherit;padding:0 .08em;border-radius:2px}
 .pastezone.small{min-height:56px;padding:12px;font-size:.92rem}
 .linkish{background:none;border:0;padding:0;font:inherit;color:var(--info);text-decoration:underline;cursor:pointer}
 
+
+/* Factoids: a drawer that pulls out from under the card */
+.factoid{margin:-6px 10px 0;background:var(--surface);border:1px solid var(--line);border-top:3px solid var(--hl-solid);border-radius:0 0 10px 10px;box-shadow:var(--shadow)}
+.factoid summary{list-style:none;cursor:pointer}
+.factoid summary::-webkit-details-marker{display:none}
+.ftab{display:flex;align-items:center;gap:8px;padding:10px 14px;font:600 .72rem/1.2 var(--f-mono);text-transform:uppercase;letter-spacing:.08em;color:var(--ink)}
+.ftab .muted{text-transform:none;letter-spacing:0;font-weight:400}
+.factoid[open] .ftab .muted{display:none}
+summary.ftab::after{content:"";margin-left:auto;width:8px;height:8px;border-right:2px solid var(--ink-soft);border-bottom:2px solid var(--ink-soft);transform:rotate(45deg) translateY(-2px);transition:transform .2s}
+.factoid[open] summary.ftab::after{transform:rotate(-135deg) translateY(-2px)}
+.fbody{padding:0 14px 12px;font-size:1rem;line-height:1.55;overflow-wrap:anywhere;animation:fslide .28s ease-out}
+@keyframes fslide{from{opacity:0;transform:translateY(-6px)}}
+.factoid .linkish{margin:0 14px 12px;font-size:.85rem}
+.factoid.editing{display:flex;flex-direction:column;gap:10px;padding:0 14px 14px}
+.factoid.editing .ftab{padding:10px 0 0}
+#fact-text{width:100%;min-height:100px;padding:10px 12px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink);font:400 16px/1.5 var(--f-body);resize:vertical}
+.addfact{align-self:flex-start;background:none;border:1px dashed var(--ink-soft);border-radius:8px;padding:9px 14px;color:var(--ink-soft);font:700 .85rem/1 var(--f-body)}
+.addfact:hover{color:var(--ink);border-color:var(--ink)}
+.fline{margin-top:4px;font-size:.85rem;color:var(--ink-soft);overflow-wrap:anywhere}
+
 /* Summary */
 .done{align-items:center;text-align:center;padding:28px 18px;background:var(--card);border:1px solid var(--card-edge);border-radius:14px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:14px}
 .done .xp{font:400 clamp(2.6rem,12vw,4rem)/1 var(--f-display);color:var(--ink)}
@@ -362,7 +382,7 @@ function firstSentences(s, n) { if (s.length <= n) return s; const cut = s.slice
 const S = {
   decks: {},
   profile: { xp: 0, streak: 0, lastDay: "", todayCount: 0, best: 0 },
-  view: "library", deckId: null, session: null, sound: true, timed: true, msg: null, showPaste: false,
+  view: "library", deckId: null, session: null, sound: true, timed: true, msg: null, showPaste: false, factEdit: null,
 };
 
 /* ---------- spaced repetition ---------- */
@@ -481,6 +501,41 @@ function renderHud() {
 }
 const kindLabel = c => c.kind === "claim" ? "Claim" : c.kind === "cloze" ? "Blank" : c.kind === "list" ? "List" : c.kind === "when" ? "When" : c.def ? "Term" : "Q&A";
 /* ---------- review mode ---------- */
+// Factoids: your own extra note on a card. Added or edited once the answer is showing; on later
+// appearances it waits behind a tab you can slide open.
+const FACT_MAX = 1200;
+function factHTML(c, revealed) {
+  if (!c) return "";
+  if (S.factEdit === c.id) {
+    return `<section class="factoid editing">
+      <label class="ftab" for="fact-text">Factoid</label>
+      <textarea id="fact-text" maxlength="${FACT_MAX}" rows="4" placeholder="Anything that helps this one stick: context, a story, a connection to something else you know.">${esc(c.fact || "")}</textarea>
+      <div class="row" style="justify-content:space-between">
+        <div class="row" style="gap:8px"><button class="btn primary" data-act="fact-save" data-id="${c.id}">Save factoid</button><button class="btn" data-act="fact-cancel">Cancel</button></div>
+        ${c.fact ? `<button class="btn danger" data-act="fact-del" data-id="${c.id}">Delete</button>` : ""}
+      </div>
+    </section>`;
+  }
+  if (!c.fact) return revealed ? `<button class="addfact" data-act="fact-edit" data-id="${c.id}">+ Add a factoid</button>` : "";
+  const body = `<div class="fbody">${md(c.fact)}</div>`;
+  if (revealed) return `<details class="factoid" open><summary class="ftab">Factoid</summary>${body}<button class="linkish" data-act="fact-edit" data-id="${c.id}">Edit factoid</button></details>`;
+  return `<details class="factoid"><summary class="ftab">Factoid <span class="muted">· tap to open</span></summary>${body}</details>`;
+}
+function saveFact(id, text) {
+  const d = S.decks[S.deckId], c = d && d.cards.find(x => x.id === id); if (!c) return;
+  const t = String(text || "").trim().slice(0, FACT_MAX);
+  if (t) { c.fact = t; } else { delete c.fact; }
+  c.factAt = Date.now(); d.updated = Date.now();
+  S.factEdit = null; saveDeck(S.deckId, "cards"); render();
+}
+// Returns true when the tap was a factoid action.
+function factAction(a, b) {
+  if (a === "fact-edit") { S.factEdit = b.dataset.id; render(); const t = $("#fact-text"); if (t) { t.focus({ preventScroll: true }); t.setSelectionRange(t.value.length, t.value.length); t.scrollIntoView({ block: "nearest", behavior: reduced ? "auto" : "smooth" }); } return true; }
+  if (a === "fact-save") { const t = $("#fact-text"); saveFact(b.dataset.id, t ? t.value : ""); sfx("flip"); return true; }
+  if (a === "fact-cancel") { S.factEdit = null; render(); return true; }
+  if (a === "fact-del") { saveFact(b.dataset.id, ""); return true; }
+  return false;
+}
 function startReview() {
   const d = S.decks[S.deckId], now = Date.now();
   const due = d.cards.filter(c => c.srs.state !== "new" && c.srs.due <= now).sort((a, b) => a.srs.due - b.srs.due);
@@ -531,6 +586,7 @@ function reviewHTML() {
     <div class="flip ${s.flipped ? "on" : ""}" id="flip" data-act="flip" tabindex="0" role="button" aria-label="${s.flipped ? "Card answer" : "Show answer"}">
       <div class="faces"><div class="face front">${cardFace(c, false)}</div><div class="face back">${cardFace(c, true)}</div></div>
     </div>
+    ${factHTML(c, s.flipped)}
     ${s.flipped ? `<div class="rates">
       ${[["Again", "--bad"], ["Hard", "--warn"], ["Good", "--info"], ["Easy", "--good"]].map(([l, v], i) => `<button class="rate" style="--rc:var(${v})" data-act="rate" data-r="${i + 1}">${l}<small>${previewIvl(c.srs, i + 1)}</small></button>`).join("")}
     </div><p class="hint">How well did you remember it? <span class="kbd">1</span>–<span class="kbd">4</span></p>${sheetHTML()}`
@@ -539,7 +595,7 @@ function reviewHTML() {
 }
 function flipCard() { const s = S.session; if (!s || s.flipped) return; s.flipped = true; sfx("flip"); render(); }
 function rate(r) {
-  closePicSheet();
+  closePicSheet(); S.factEdit = null;
   const s = S.session, d = S.decks[S.deckId], id = s.queue.shift(), c = d.cards.find(x => x.id === id);
   if (!c) return;
   const now = Date.now(); schedule(c.srs, r, now);
@@ -622,11 +678,12 @@ function quizHTML() {
       <div class="combo" id="combo">Combo ${s.combo}${comboMult(s.combo) > 1 ? ` <span class="x">×${comboMult(s.combo)}</span>` : ""}</div></div></div>
     ${S.timed ? `<div class="timer ${answered ? "" : "run"}" style="--t:${QT}ms"><i></i></div>` : ""}
     <div class="face qcard"><div class="card-top"><span class="ctx">${esc(q.ctx || "")}</span><span class="chip">${chip}</span></div><div class="ruled"><div class="q">${q.prompt}</div></div></div>
+    ${answered ? "" : factHTML(S.decks[S.deckId].cards.find(x => x.id === q.id), false)}
     <div class="opts">${q.options.map((o, i) => {
       let cls = ""; if (answered) { if (o === q.correct) cls = "right"; else if (i === s.picked) cls = "wrong"; }
       return `<button class="opt ${cls}" data-act="pick" data-i="${i}" ${answered ? "disabled" : ""}><span class="k">${i + 1}</span><span class="t">${md(o)}</span></button>`;
     }).join("")}</div>
-    ${answered ? explainHTML(q) + sheetHTML() : ""}
+    ${answered ? explainHTML(q) + factHTML(S.decks[S.deckId].cards.find(x => x.id === q.id), true) + sheetHTML() : ""}
     ${answered ? `<div class="row" style="justify-content:space-between"><p class="hint" style="text-align:left">${s.lastRight ? "Nice." : s.picked === -1 ? "Time’s up. That card goes back in your review pile." : "Missed. That card goes back in your review pile."}</p>
       <button class="btn primary" data-act="next-q" id="next-q">${s.i + 1 >= s.qs.length ? "See results" : "Next question"} →</button></div>
       <p class="hint">Take your time with the answer. <span class="kbd">Enter</span> for the next one.</p>` : ""}
@@ -643,7 +700,7 @@ function explainHTML(q) {
 }
 function nextQ() {
   const s = S.session; if (!s || s.mode !== "quiz" || s.picked === null) return;
-  closePicSheet();
+  closePicSheet(); S.factEdit = null;
   s.i++; s.picked = null; if (s.i >= s.qs.length) finish(); else { render(); window.scrollTo && window.scrollTo({ top: 0, behavior: reduced ? "auto" : "smooth" }); }
 }
 function startQuizTimer() {
@@ -799,7 +856,7 @@ function tapEvent(id) {
 
 /* ---------- finish ---------- */
 function finish() {
-  closePicSheet(); clearTimeout(qTimer); clearInterval(S.matchTick);
+  closePicSheet(); S.factEdit = null; clearTimeout(qTimer); clearInterval(S.matchTick);
   const s = S.session; S.lastSession = s; S.session = null;
   if (s.mode === "review") S.profile.best = Math.max(S.profile.best || 0, s.stats.best);
   saveProfile(); runDeferred();
@@ -910,14 +967,17 @@ function bringBackText(text) {
   let g; try { g = JSON.parse(text); } catch (e) { g = null; }
   if (g && g.format === "vault-recall-pack") { S.libMsg = { text: "That’s a deck file for the phone. Pick the progress file the player sent back instead.", err: true }; return render(); }
   if (!g || g.format !== "vault-recall-progress") { S.libMsg = { text: "That isn’t a progress file from the offline player.", err: true }; return render(); }
-  let n = 0, decks = 0;
+  let n = 0, decks = 0, factsIn = 0, cardsDirty = false;
   for (const dk of g.decks || []) {
     const d = S.decks[dk.id]; if (!d || !dk.cards) continue;
     let ch = 0;
     for (const c of d.cards) {
       const r = dk.cards[c.id];
       if (r && (r.at || 0) > (c.srs.at || 0)) { c.srs = { state: r.state || "review", due: r.due || 0, ivl: r.ivl || 0, ease: r.ease || 2.5, reps: r.reps || 0, lapses: r.lapses || 0, at: r.at }; ch++; }
+      const f = dk.facts && dk.facts[c.id];
+      if (f && (f[1] || 0) > (c.factAt || 0)) { if (f[0]) c.fact = String(f[0]).slice(0, FACT_MAX); else delete c.fact; c.factAt = f[1]; ch++; factsIn++; cardsDirty = true; }
     }
+    if (cardsDirty) { cardsDirty = false; d.updated = Date.now(); saveDeck(d.id, "cards"); }
     if (ch) { d.updated = Date.now(); saveDeck(d.id, "prog"); n += ch; decks++; }
   }
   const P = S.profile, Q = g.profile || {};
@@ -929,7 +989,9 @@ function bringBackText(text) {
   else if (Q.lastDay && Q.lastDay === P.lastDay) { P.streak = Math.max(P.streak || 0, Q.streak || 0); P.todayCount = Math.max(P.todayCount || 0, Q.todayCount || 0); }
   P.best = Math.max(P.best || 0, Q.best || 0);
   saveProfile();
-  S.libMsg = { text: n || add ? `Brought back ${n} review${n === 1 ? "" : "s"} from ${decks} deck${decks === 1 ? "" : "s"}${add ? `, plus ${add} XP` : ""}.` : "Everything in that file was already here." };
+  n -= factsIn;
+  const got = [n && `${n} review${n === 1 ? "" : "s"}`, factsIn && `${factsIn} factoid${factsIn === 1 ? "" : "s"}`].filter(Boolean);
+  S.libMsg = { text: got.length || add ? `Brought back ${got.length ? got.join(" and ") + ` from ${decks} deck${decks === 1 ? "" : "s"}` : "your XP"}${add ? `${got.length ? ", plus" : ":"} ${add} XP` : ""}.` : "Everything in that file was already here." };
   render();
 }
 function phoneHTML() {
@@ -1030,7 +1092,11 @@ async function importPackText(text) {
     if (old) {
       // keep whatever was reviewed more recently, card by card
       const om = new Map(old.cards.map(c => [c.id, c]));
-      d.cards.forEach(c => { const o = om.get(c.id); if (o && (o.srs.at || 0) > ((c.srs && c.srs.at) || 0)) c.srs = o.srs; });
+      d.cards.forEach(c => {
+        const o = om.get(c.id); if (!o) return;
+        if ((o.srs.at || 0) > ((c.srs && c.srs.at) || 0)) c.srs = o.srs;
+        if ((o.factAt || 0) > (c.factAt || 0)) { if (o.fact) c.fact = o.fact; else delete c.fact; c.factAt = o.factAt; }
+      });
       updated++;
     } else added++;
     d.cards.forEach(c => { c.srs = c.srs || { state: "new", due: 0, ivl: 0, ease: 2.5, reps: 0, lapses: 0, at: 0 }; });
@@ -1048,7 +1114,7 @@ async function importPackText(text) {
 }
 function reviewsSinceSend() {
   let n = 0; const t = S.meta.lastExport || S.meta.importedAt || 0;
-  Object.values(S.decks).forEach(d => d.cards.forEach(c => { if ((c.srs.at || 0) > t) n++; }));
+  Object.values(S.decks).forEach(d => d.cards.forEach(c => { if ((c.srs.at || 0) > t || (c.factAt || 0) > t) n++; }));
   return n;
 }
 function progressJSON() {
@@ -1056,7 +1122,9 @@ function progressJSON() {
     format: "vault-recall-progress", version: 1, id: uid("g"), packId: S.meta.packId || "", exported: Date.now(),
     xpGained: Math.max(0, (S.profile.xp || 0) - (S.meta.base || 0)),
     profile: { streak: S.profile.streak || 0, lastDay: S.profile.lastDay || "", todayCount: S.profile.todayCount || 0, best: S.profile.best || 0 },
-    decks: Object.values(S.decks).map(d => ({ id: d.id, title: d.title, cards: Object.fromEntries(d.cards.filter(c => c.srs && c.srs.at).map(c => [c.id, c.srs])) })),
+    decks: Object.values(S.decks).map(d => ({ id: d.id, title: d.title,
+      cards: Object.fromEntries(d.cards.filter(c => c.srs && c.srs.at).map(c => [c.id, c.srs])),
+      facts: Object.fromEntries(d.cards.filter(c => c.factAt).map(c => [c.id, [c.fact || "", c.factAt]])) })),
   });
 }
 async function copyProgress() {
@@ -1144,7 +1212,7 @@ function deckHTML() {
   const tnYears = new Set(tn.map(x => x.year)).size;
   const shown = d.cards.slice(0, 300);
   const list = shown.map(c => `<div class="citem" style="grid-template-columns:auto minmax(0,1fr)"><span class="chip">${kindLabel(c)}</span>
-      <div><div class="q">${md(c.front)}</div><div class="a">${md(c.kind === "cloze" || c.kind === "when" ? c.answer : trunc(c.back, 220))}</div></div></div>`).join("");
+      <div><div class="q">${md(c.front)}</div><div class="a">${md(c.kind === "cloze" || c.kind === "when" ? c.answer : trunc(c.back, 220))}</div>${c.fact ? `<div class="fline"><b>Factoid:</b> ${md(trunc(c.fact, 160))}</div>` : ""}</div></div>`).join("");
   return `<div class="stage">
     <button class="back-link" data-act="home">← All decks</button>
     <div class="deck-head"><h1>${esc(d.title)}</h1><p class="muted">${st.total} cards${d.source ? " · from " + esc(d.source) : ""}</p></div>
@@ -1171,7 +1239,8 @@ function leaveSession() { clearTimeout(qTimer); clearInterval(S.matchTick); S.se
 document.addEventListener("click", e => {
   const b = e.target.closest("[data-act]"); if (!b) return;
   const a = b.dataset.act;
-  if (a === "home") { if (S.session) leaveSession(); S.msg = null; S.view = "library"; render(); }
+  if (factAction(a, b)) return;
+  if (a === "home") { S.factEdit = null; if (S.session) leaveSession(); S.msg = null; S.view = "library"; render(); }
   else if (a === "open") { S.deckId = b.dataset.id; S.view = "deck"; S.msg = null; render(); }
   else if (a === "sound") { S.sound = !S.sound; try { localStorage.setItem(LS + ":sound", S.sound ? "1" : "0"); } catch (x) {} renderHud(); if (S.sound) sfx("good"); }
   else if (a === "timer") { S.timed = !S.timed; try { localStorage.setItem(LS + ":timed", S.timed ? "1" : "0"); } catch (x) {} render(); }
