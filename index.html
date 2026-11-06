@@ -501,11 +501,10 @@ function renderHud() {
 }
 const kindLabel = c => c.kind === "claim" ? "Claim" : c.kind === "cloze" ? "Blank" : c.kind === "list" ? "List" : c.kind === "when" ? "When" : c.def ? "Term" : "Q&A";
 /* ---------- review mode ---------- */
-// Factoids: your own extra note on a card. Added or edited once the answer is showing; on later
-// appearances it waits behind a tab you can slide open.
+// Factoids: your own extra note on a card. Only shown once the answer is revealed, so it never gives the answer away.
 const FACT_MAX = 1200;
 function factHTML(c, revealed) {
-  if (!c) return "";
+  if (!c || !revealed) return "";
   if (S.factEdit === c.id) {
     return `<section class="factoid editing">
       <label class="ftab" for="fact-text">Factoid</label>
@@ -516,10 +515,8 @@ function factHTML(c, revealed) {
       </div>
     </section>`;
   }
-  if (!c.fact) return revealed ? `<button class="addfact" data-act="fact-edit" data-id="${c.id}">+ Add a factoid</button>` : "";
-  const body = `<div class="fbody">${md(c.fact)}</div>`;
-  if (revealed) return `<details class="factoid" open><summary class="ftab">Factoid</summary>${body}<button class="linkish" data-act="fact-edit" data-id="${c.id}">Edit factoid</button></details>`;
-  return `<details class="factoid"><summary class="ftab">Factoid <span class="muted">· tap to open</span></summary>${body}</details>`;
+  if (!c.fact) return `<button class="addfact" data-act="fact-edit" data-id="${c.id}">+ Add a factoid</button>`;
+  return `<details class="factoid" open><summary class="ftab">Factoid</summary><div class="fbody">${md(c.fact)}</div><button class="linkish" data-act="fact-edit" data-id="${c.id}">Edit factoid</button></details>`;
 }
 function saveFact(id, text) {
   const d = S.decks[S.deckId], c = d && d.cards.find(x => x.id === id); if (!c) return;
