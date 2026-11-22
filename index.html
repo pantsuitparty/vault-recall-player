@@ -327,6 +327,20 @@ summary.ftab::after{content:"";margin-left:auto;width:8px;height:8px;border-righ
 
 .mix{border-top:4px solid var(--red)}
 
+
+/* Deleting cards, and cards that won't stick */
+.addfact.del{border-color:color-mix(in srgb,var(--bad) 55%,transparent);color:var(--bad)}
+.addfact.del:hover{border-color:var(--bad);color:var(--bad);background:color-mix(in srgb,var(--bad) 8%,transparent)}
+.leech{display:flex;flex-direction:column;gap:8px;padding:12px 14px;border-radius:10px;background:color-mix(in srgb,var(--warn) 10%,var(--surface));border:1px solid color-mix(in srgb,var(--warn) 45%,var(--line));border-left:4px solid var(--warn)}
+.leech p{font-size:.9rem;color:var(--ink-soft)}
+.leech .btn{min-height:38px;padding:0 12px;font-size:.88rem}
+.leeches{border-top:4px solid var(--warn)}
+.leeches .chip{background:var(--warn);color:var(--card);border-color:transparent}
+.danger-l{color:var(--bad)!important}
+#toast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom,0px));transform:translate(-50%,20px);opacity:0;pointer-events:none;display:flex;align-items:center;gap:14px;max-width:min(92vw,460px);padding:12px 16px;border-radius:12px;background:var(--btn);color:var(--btn-ink);box-shadow:0 10px 30px -10px rgba(0,0,0,.5);transition:opacity .2s,transform .2s;z-index:50;font-size:.92rem}
+#toast.show{opacity:1;transform:translate(-50%,0);pointer-events:auto}
+#toast button{background:none;border:0;color:inherit;font-weight:700;text-decoration:underline;padding:4px 2px}
+
 /* Summary */
 .done{align-items:center;text-align:center;padding:28px 18px;background:var(--card);border:1px solid var(--card-edge);border-radius:14px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:14px}
 .done .xp{font:400 clamp(2.6rem,12vw,4rem)/1 var(--f-display);color:var(--ink)}
@@ -393,11 +407,13 @@ function firstSentences(s, n) { if (s.length <= n) return s; const cut = s.slice
 const S = {
   decks: {},
   profile: { xp: 0, streak: 0, lastDay: "", todayCount: 0, best: 0 },
-  view: "library", deckId: null, session: null, sound: true, timed: true, msg: null, showPaste: false, factEdit: null, cardEdit: null, editErr: "", browseOpen: false,
+  view: "library", deckId: null, session: null, sound: true, timed: true, msg: null, showPaste: false, factEdit: null, cardEdit: null, editErr: "", browseOpen: false, splitEdit: null, factDraft: null, undo: null,
 };
 
 /* ---------- spaced repetition ---------- */
 function schedule(s, r, now) {
+  // "Again" on a card you'd seen at least half an hour earlier counts as forgetting it
+  if (r === 1 && s.at && now - s.at > 30 * MIN) s.f = (s.f || 0) + 1;
   s.at = now;
   if (r === 1) { if (s.reps) s.lapses++; s.reps = 0; s.ivl = 0; s.ease = Math.max(1.3, s.ease - 0.2); s.due = now + MIN; s.state = "learning"; }
   else if (r === 2) {
@@ -519,7 +535,7 @@ function factHTML(c, revealed) {
   if (S.factEdit === c.id) {
     return `<section class="factoid editing">
       <label class="ftab" for="fact-text">Factoid</label>
-      <textarea id="fact-text" maxlength="${FACT_MAX}" rows="4" placeholder="Anything that helps this one stick: context, a story, a connection to something else you know.">${esc(c.fact || "")}</textarea>
+      <textarea id="fact-text" maxlength="${FACT_MAX}" rows="4" placeholder="Anything that helps this one stick: context, a story, a connection to something else you know.">${esc(S.factDraft != null ? S.factDraft : (c.fact || ""))}</textarea>
       <div class="row" style="justify-content:space-between">
         <div class="row" style="gap:8px"><button class="btn primary" data-act="fact-save" data-id="${c.id}">Save factoid</button><button class="btn" data-act="fact-cancel">Cancel</button></div>
         ${c.fact ? `<button class="btn danger" data-act="fact-del" data-id="${c.id}">Delete</button>` : ""}
@@ -534,7 +550,7 @@ function saveFact(id, text) {
   const t = String(text || "").trim().slice(0, FACT_MAX);
   if (t) { c.fact = t; } else { delete c.fact; }
   c.factAt = Date.now(); d.updated = Date.now();
-  S.factEdit = null; saveDeck(S.deckId, "cards"); render();
+  S.factEdit = null; S.factDraft = null; saveDeck(S.deckId, "cards"); render();
 }
 // Editing a card's wording. The first edit keeps the note's original wording, so it can be undone, and so
 // "Update from note" still recognises the card and leaves your wording alone.
@@ -563,9 +579,11 @@ function cardEditHTML(c) {
 function answerTools(c, revealed) {
   if (!c || !revealed) return "";
   if (S.cardEdit === c.id) return cardEditHTML(c);
-  const f = factHTML(c, true), edit = `<button class="addfact" data-act="card-edit" data-id="${c.id}">Edit card</button>`;
-  if (!c.fact && S.factEdit !== c.id) return `<div class="row" style="gap:8px">${f}${edit}</div>`;
-  return f + `<div class="row">${edit}</div>`;
+  if (S.splitEdit === c.id) return splitHTML(c);
+  const f = factHTML(c, true), banner = isLeech(c) && S.factEdit !== c.id ? leechHTML(c) : "";
+  const tools = `<button class="addfact" data-act="card-edit" data-id="${c.id}">Edit card</button><button class="addfact del" data-act="card-del" data-id="${c.id}">Delete card</button>`;
+  if (!c.fact && S.factEdit !== c.id) return banner + `<div class="row" style="gap:8px">${f}${tools}</div>`;
+  return banner + f + `<div class="row" style="gap:8px">${tools}</div>`;
 }
 function parseYearLabel(t, wasBC) {
   const m = String(t || "").trim().match(/^(~)?\s*(\d{1,4})(?:\s*([\/–-])\s*(\d{1,4}))?\s*(BCE|BC|B\.C\.?|AD|A\.D\.?|CE)?$/i);
@@ -612,17 +630,126 @@ function revertCard(id) {
   finishEdit(d, c, oldAnswer);
 }
 function finishEdit(d, c, oldAnswer) {
-  c.editAt = Date.now(); d.updated = Date.now();
+  c.editAt = Date.now(); d.updated = Date.now(); if (c.srs) c.srs.f = 0;
   // keep a quiz question that's on screen in step with the new wording
   const s = S.session, q = s && s.mode === "quiz" && s.qs[s.i];
   if (q && q.id === c.id && q.kind !== "claim" && oldAnswer !== c.answer) { q.options = q.options.map(o => o === q.correct ? c.answer : o); q.correct = c.answer; }
   S.cardEdit = null; S.editErr = ""; saveDeck(S.deckId, "cards"); render(); sfx("flip");
 }
+/* Deleting cards, and cards that won't stick. A deleted card leaves a marker so updating from the note
+   doesn't bring it back. A card you've forgotten 3 times is flagged, with ways to fix it. */
+const LEECH_AT = 3;
+const isLeech = c => !!c && c.kind !== "list" && (c.srs.f || 0) >= LEECH_AT;
+const canSplitCard = c => c.kind === "qa" || c.kind === "claim" || c.kind === "list";
+let toastT = 0;
+function toast(msg, undo) {
+  S.undo = undo || null;
+  let el = document.getElementById("toast");
+  if (!el) { el = document.createElement("div"); el.id = "toast"; el.setAttribute("role", "status"); document.body.appendChild(el); }
+  el.innerHTML = `<span>${esc(msg)}</span>${undo ? `<button data-act="undo-del">Undo</button>` : ""}`;
+  el.className = "show"; clearTimeout(toastT); toastT = setTimeout(hideToast, 7000);
+}
+function hideToast() { const el = document.getElementById("toast"); if (el) el.className = ""; S.undo = null; }
+function deleteCard(id) {
+  const d = S.decks[S.deckId]; if (!d) return;
+  const i = d.cards.findIndex(c => c.id === id); if (i < 0) return;
+  const c = d.cards[i], tomb = c.srcKey || (c.kind + "|" + norm(c.front));
+  d.cards.splice(i, 1);
+  d.removed = (d.removed || []).concat([tomb]).slice(-2000);
+  d.deleted = (d.deleted || []).concat([id]).slice(-2000);
+  let pic = null; if (d.cardPics && d.cardPics[id]) { pic = d.cardPics[id]; delete d.cardPics[id]; }
+  d.updated = Date.now(); saveDeck(S.deckId, "cards");
+  S.cardEdit = null; S.factEdit = null; S.splitEdit = null;
+  toast("Card deleted.", { deckId: S.deckId, card: c, index: i, tomb, pic });
+  const s = S.session;
+  if (s && s.queue) {
+    const ref = s.mix ? S.deckId + "|" + id : id;
+    s.queue = s.queue.filter(x => x !== ref); s.flipped = false;
+    if (!s.queue.length) { if (s.stats.n) return finish(); leaveSession(); S.view = s.mix ? "library" : "deck"; }
+  }
+  render();
+}
+function undoDelete() {
+  const u = S.undo, d = u && S.decks[u.deckId]; if (!d) return hideToast();
+  d.cards.splice(Math.min(u.index, d.cards.length), 0, u.card);
+  d.removed = (d.removed || []).filter(k => k !== u.tomb);
+  d.deleted = (d.deleted || []).filter(x => x !== u.card.id);
+  if (u.pic) { d.cardPics = d.cardPics || {}; d.cardPics[u.card.id] = u.pic; }
+  d.updated = Date.now(); saveDeck(u.deckId, "cards");
+  hideToast(); toast("Card restored."); if (!S.session) render();
+}
+function leechHTML(c) {
+  return `<section class="leech"><b>This one keeps slipping</b>
+    <p>You’ve forgotten it ${c.srs.f} times. Cards usually stick better when they ask one thing, in a few words, with something to hang it on.</p>
+    <div class="row" style="gap:6px">
+      <button class="btn" data-act="card-edit" data-id="${c.id}">Reword</button>
+      ${canSplitCard(c) ? `<button class="btn" data-act="card-split" data-id="${c.id}">Split in two</button>` : ""}
+      ${c.fact ? "" : `<button class="btn" data-act="fact-edit" data-id="${c.id}">Add a memory hook</button>`}
+      ${hookButton(c)}
+      <button class="btn" data-act="leech-ok" data-id="${c.id}">Keep as is</button>
+    </div></section>`;
+}
+function splitGuess(text) {
+  const t = plain(text || "").trim();
+  const tries = [t.replace(/([.!?])\s+(?=[A-Z“"(])/g, "$1\u0001"), t.replace(/\n+/g, "\u0001"), t.replace(/\s*;\s*/g, "\u0001"), t.replace(/,?\s+and\s+/, "\u0001")];
+  for (const x of tries) {
+    const parts = x.split("\u0001").map(y => y.replace(/^[•\-\s]+/, "").trim()).filter(Boolean);
+    if (parts.length >= 2) { const mid = Math.ceil(parts.length / 2); return [parts.slice(0, mid).join(" "), parts.slice(mid).join(" ")]; }
+  }
+  return [t, ""];
+}
+function splitHTML(c) {
+  const [a, b] = splitGuess(c.back);
+  const f = (id, label, val) => `<div class="field"><label for="${id}">${label}</label><textarea id="${id}" rows="2">${esc(val)}</textarea></div>`;
+  return `<section class="cardedit">
+    <span class="ftab" style="padding:0">Split into two cards</span>
+    <p class="note">Give each card one question with one short answer. The second card starts as new.</p>
+    ${f("sp-f1", "Card 1 question", c.front)}${f("sp-b1", "Card 1 answer", a)}
+    ${f("sp-f2", "Card 2 question", c.front)}${f("sp-b2", "Card 2 answer", b)}
+    ${S.editErr ? `<p class="err">${esc(S.editErr)}</p>` : ""}
+    <div class="row" style="gap:8px"><button class="btn primary" data-act="split-save" data-id="${c.id}">Make two cards</button><button class="btn" data-act="split-cancel">Cancel</button></div>
+  </section>`;
+}
+function saveSplit(id) {
+  const d = S.decks[S.deckId], i = d ? d.cards.findIndex(x => x.id === id) : -1; if (i < 0) return;
+  const c = d.cards[i], v = k => { const el = document.getElementById(k); return el ? el.value.trim() : ""; };
+  const f1 = v("sp-f1"), b1 = v("sp-b1"), f2 = v("sp-f2"), b2 = v("sp-b2");
+  if (!f1 || !b1 || !f2 || !b2) { S.editErr = "Both cards need a question and an answer."; return render(); }
+  if (norm(f1) === norm(f2)) { S.editErr = "Give the two cards different questions, so each one asks for a different answer."; return render(); }
+  if (!c.orig) c.orig = wordingOf(c);
+  if (!c.srcKey && !c.ai) c.srcKey = c.kind + "|" + norm(c.front);
+  const oldAnswer = c.answer;
+  Object.assign(c, { front: f1, back: b1, answer: plain(b1) });
+  if (c.kind === "list") c.kind = "qa";
+  d.cards.splice(i + 1, 0, { id: uid("c"), ord: typeof c.ord === "number" ? c.ord + 0.001 : i + 0.5, kind: "qa", def: false, front: f2, back: b2, answer: plain(b2),
+    ctx: c.ctx || "", year: c.year || null, more: "", event: "", distractors: [], explicit: false, ai: false, mine: true, madeAt: Date.now(),
+    srs: { state: "new", due: 0, ivl: 0, ease: 2.5, reps: 0, lapses: 0, at: 0, f: 0 } });
+  S.splitEdit = null;
+  finishEdit(d, c, oldAnswer);
+  toast("Split into two cards.");
+}
+function leechPanelHTML(d) {
+  const list = d.cards.filter(isLeech); if (!list.length) return "";
+  const row = c => S.cardEdit === c.id ? `<div class="citem editing">${cardEditHTML(c)}</div>` : S.splitEdit === c.id ? `<div class="citem editing">${splitHTML(c)}</div>` : S.factEdit === c.id ? `<div class="citem editing">${factHTML(c, true)}</div>` :
+    `<div class="citem"><span class="chip" title="Times forgotten">${c.srs.f}×</span><div><div class="q">${md(trunc(c.front, 150))}</div><div class="a">${md(trunc(c.kind === "cloze" || c.kind === "when" ? c.answer : c.back, 150))}</div>
+      <div class="row" style="gap:12px;margin-top:8px"><button class="linkish" data-act="card-edit" data-id="${c.id}">Reword</button>${canSplitCard(c) ? `<button class="linkish" data-act="card-split" data-id="${c.id}">Split</button>` : ""}${c.fact ? "" : `<button class="linkish" data-act="fact-edit" data-id="${c.id}">Memory hook</button>`}<button class="linkish" data-act="leech-ok" data-id="${c.id}">Keep as is</button><button class="linkish danger-l" data-act="card-del" data-id="${c.id}">Delete</button></div></div></div>`;
+  return `<section class="panel leeches">
+    <div class="row" style="justify-content:space-between;align-items:flex-start"><div style="min-width:0;flex:1"><b>Cards that won’t stick</b><p class="muted">${list.length} card${list.length === 1 ? "" : "s"} you keep forgetting. Fix the wording, or practise just these.</p></div><button class="btn primary" data-act="leech-review">Practise ${list.length}</button></div>
+    <div class="clist">${list.slice(0, 12).map(row).join("")}</div>
+  </section>`;
+}
 // Returns true when the tap was a factoid action.
 function factAction(a, b) {
   if (a === "fact-edit") { S.factEdit = b.dataset.id; render(); const t = $("#fact-text"); if (t) { t.focus({ preventScroll: true }); t.setSelectionRange(t.value.length, t.value.length); t.scrollIntoView({ block: "nearest", behavior: reduced ? "auto" : "smooth" }); } return true; }
   if (a === "fact-save") { const t = $("#fact-text"); saveFact(b.dataset.id, t ? t.value : ""); sfx("flip"); return true; }
-  if (a === "fact-cancel") { S.factEdit = null; render(); return true; }
+  if (a === "fact-cancel") { S.factEdit = null; S.factDraft = null; render(); return true; }
+  if (a === "card-del") { deleteCard(b.dataset.id); return true; }
+  if (a === "undo-del") { undoDelete(); return true; }
+  if (a === "card-split") { S.splitEdit = b.dataset.id; S.cardEdit = null; S.factEdit = null; S.editErr = ""; render(); const t = $("#sp-b1"); if (t) { t.focus({ preventScroll: true }); t.closest(".cardedit").scrollIntoView({ block: "nearest", behavior: reduced ? "auto" : "smooth" }); } return true; }
+  if (a === "split-save") { saveSplit(b.dataset.id); return true; }
+  if (a === "split-cancel") { S.splitEdit = null; S.editErr = ""; render(); return true; }
+  if (a === "leech-ok") { const d = S.decks[S.deckId], c = d && d.cards.find(x => x.id === b.dataset.id); if (c) { c.srs.f = 0; d.updated = Date.now(); saveDeck(S.deckId, "prog"); toast("Kept. It won’t be flagged unless it slips again."); render(); } return true; }
+  if (a === "leech-review") { const d = S.decks[S.deckId]; startReview(d.cards.filter(isLeech).map(c => c.id)); return true; }
   if (a === "fact-del") { saveFact(b.dataset.id, ""); return true; }
   if (a === "card-edit") {
     S.cardEdit = b.dataset.id; S.factEdit = null; S.editErr = ""; render();
@@ -632,11 +759,16 @@ function factAction(a, b) {
   }
   if (a === "card-save") { saveCardEdit(b.dataset.id); return true; }
   if (a === "card-cancel") { S.cardEdit = null; S.editErr = ""; render(); return true; }
+  if (a === "fact-edit" && false) return true;
   if (a === "card-revert") { revertCard(b.dataset.id); return true; }
   return false;
 }
-function startReview() {
+function startReview(ids) {
   const d = S.decks[S.deckId], now = Date.now();
+  if (Array.isArray(ids) && ids.length) {
+    S.session = { mode: "review", queue: shuffle(ids), flipped: false, combo: 0, cram: false, stats: { n: 0, right: 0, xp: 0, best: 0 } };
+    S.view = "review"; return render();
+  }
   const due = d.cards.filter(c => c.srs.state !== "new" && c.srs.due <= now).sort((a, b) => a.srs.due - b.srs.due);
   const fresh = d.cards.filter(c => c.srs.state === "new").slice(0, 15);
   let queue = [...due, ...fresh].map(c => c.id), cram = false;
@@ -744,7 +876,7 @@ function reviewHTML() {
 }
 function flipCard() { const s = S.session; if (!s || s.flipped) return; s.flipped = true; sfx("flip"); render(); }
 function rate(r) {
-  closePicSheet(); S.factEdit = null; S.cardEdit = null;
+  closePicSheet(); S.factEdit = null; S.cardEdit = null; S.splitEdit = null;
   const s = S.session, { ref: id, d, c } = frontCard(s, true);
   if (!c) { if (!s.queue.length) return finish(); return render(); }
   const now = Date.now(); schedule(c.srs, r, now);
@@ -849,7 +981,7 @@ function explainHTML(q) {
 }
 function nextQ() {
   const s = S.session; if (!s || s.mode !== "quiz" || s.picked === null) return;
-  closePicSheet(); S.factEdit = null; S.cardEdit = null;
+  closePicSheet(); S.factEdit = null; S.cardEdit = null; S.splitEdit = null;
   s.i++; s.picked = null; if (s.i >= s.qs.length) finish(); else { render(); window.scrollTo && window.scrollTo({ top: 0, behavior: reduced ? "auto" : "smooth" }); }
 }
 function startQuizTimer() {
@@ -868,7 +1000,7 @@ function pick(i) {
     render(); floaty("+" + xp, document.querySelector(".opt.right")); sfx("good"); gain(xp);
   } else {
     s.combo = 0; s.stats.missed++;
-    if (c && c.srs.state !== "new") { c.srs.due = Date.now(); c.srs.at = Date.now(); c.srs.state = "learning"; d.updated = Date.now(); saveDeck(S.deckId, "prog"); }
+    if (c && c.srs.state !== "new") { if (c.srs.at && Date.now() - c.srs.at > 30 * MIN) c.srs.f = (c.srs.f || 0) + 1; c.srs.due = Date.now(); c.srs.at = Date.now(); c.srs.state = "learning"; d.updated = Date.now(); saveDeck(S.deckId, "prog"); }
     render(); sfx("bad"); gain(2);
   }
   const nb = $("#next-q"); if (nb) nb.focus({ preventScroll: true });
@@ -1005,7 +1137,7 @@ function tapEvent(id) {
 
 /* ---------- finish ---------- */
 function finish() {
-  closePicSheet(); S.factEdit = null; S.cardEdit = null; clearTimeout(qTimer); clearInterval(S.matchTick);
+  closePicSheet(); S.factEdit = null; S.cardEdit = null; S.splitEdit = null; clearTimeout(qTimer); clearInterval(S.matchTick);
   const s = S.session; S.lastSession = s; S.session = null;
   if (s.mode === "review") S.profile.best = Math.max(S.profile.best || 0, s.stats.best);
   saveProfile(); runDeferred();
@@ -1036,6 +1168,22 @@ function doneHTML() {
 
 const whoHTML = c => c.who ? `<div class="who">${esc(c.who)}</div>` : "";
 const fmtDate = t => t ? new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
+
+// A memory hook from Claude for a card that won't stick. Optional: it only fills in the factoid box for you to edit.
+function hookButton(c) { return typeof sampleFn !== "undefined" && sampleFn && !c.fact ? `<button class="btn" data-act="hook-ai" data-id="${c.id}">${I.sparkle} Hook from Claude</button>` : ""; }
+async function askHook(id) {
+  const d = S.decks[S.deckId], c = d && d.cards.find(x => x.id === id); if (!c || !sampleFn) return;
+  toast("Asking Claude for a memory hook…");
+  try {
+    const r = await sampleFn(`Write one short memory hook to help someone remember the answer to this flashcard: a vivid image, a mnemonic, or a link to something familiar. At most 35 words, plain text, no preamble. Stay true to the answer; don't add facts.
+
+Deck: ${d.title}${c.ctx ? `\nSection: ${c.ctx}` : ""}
+Question: ${plain(c.front)}
+Answer: ${plain(c.kind === "cloze" ? c.answer + " (" + c.back + ")" : c.back)}`, { modelTier: "quick" });
+    S.factEdit = id; S.factDraft = String(r.text || "").trim().slice(0, FACT_MAX); hideToast(); render();
+    const t = $("#fact-text"); if (t) t.focus({ preventScroll: true });
+  } catch (e) { const m = sampleMsg(e); toast(m || "Stopped."); }
+}
 
 /* ---------- the offline phone player ---------- */
 // Decks go to the phone as a file; progress comes back as a file. Reviews carry a timestamp, so merging keeps
@@ -1116,13 +1264,25 @@ function bringBackText(text) {
   let g; try { g = JSON.parse(text); } catch (e) { g = null; }
   if (g && g.format === "vault-recall-pack") { S.libMsg = { text: "That’s a deck file for the phone. Pick the progress file the player sent back instead.", err: true }; return render(); }
   if (!g || g.format !== "vault-recall-progress") { S.libMsg = { text: "That isn’t a progress file from the offline player.", err: true }; return render(); }
-  let n = 0, decks = 0, factsIn = 0, editsIn = 0, cardsDirty = false;
+  let n = 0, decks = 0, factsIn = 0, editsIn = 0, delIn = 0, madeIn = 0, cardsDirty = false;
   for (const dk of g.decks || []) {
     const d = S.decks[dk.id]; if (!d || !dk.cards) continue;
     let ch = 0;
+    for (const id of dk.deleted || []) {
+      const i = d.cards.findIndex(c => c.id === id); if (i < 0) continue;
+      const c = d.cards[i]; d.cards.splice(i, 1);
+      d.removed = (d.removed || []).concat([c.srcKey || (c.kind + "|" + norm(c.front))]);
+      if (d.cardPics) delete d.cardPics[id];
+      delIn++; cardsDirty = true;
+    }
+    for (const m of dk.mine || []) {
+      if (!m || !m.id || d.cards.some(c => c.id === m.id) || (dk.deleted || []).includes(m.id)) continue;
+      d.cards.push(m); madeIn++; cardsDirty = true;
+    }
+    if (madeIn) d.cards = sortCards(d.cards);
     for (const c of d.cards) {
       const r = dk.cards[c.id];
-      if (r && (r.at || 0) > (c.srs.at || 0)) { c.srs = { state: r.state || "review", due: r.due || 0, ivl: r.ivl || 0, ease: r.ease || 2.5, reps: r.reps || 0, lapses: r.lapses || 0, at: r.at }; ch++; }
+      if (r && (r.at || 0) > (c.srs.at || 0)) { c.srs = { state: r.state || "review", due: r.due || 0, ivl: r.ivl || 0, ease: r.ease || 2.5, reps: r.reps || 0, lapses: r.lapses || 0, at: r.at, f: r.f || 0 }; ch++; }
       const ed = dk.edits && dk.edits[c.id];
       if (ed && (ed.editAt || 0) > (c.editAt || 0)) {
         if (!c.srcKey && !c.ai) c.srcKey = ed.srcKey || c.kind + "|" + norm(c.front);
@@ -1136,6 +1296,7 @@ function bringBackText(text) {
     }
     if (cardsDirty) { cardsDirty = false; d.updated = Date.now(); saveDeck(d.id, "cards"); }
     if (ch) { d.updated = Date.now(); saveDeck(d.id, "prog"); n += ch; decks++; }
+    else if (delIn || madeIn) decks++;
   }
   const P = S.profile, Q = g.profile || {};
   P.credited = P.credited || {};
@@ -1147,7 +1308,7 @@ function bringBackText(text) {
   P.best = Math.max(P.best || 0, Q.best || 0);
   saveProfile();
   n -= factsIn + editsIn;
-  const got = [n && `${n} review${n === 1 ? "" : "s"}`, factsIn && `${factsIn} factoid${factsIn === 1 ? "" : "s"}`, editsIn && `${editsIn} edited card${editsIn === 1 ? "" : "s"}`].filter(Boolean);
+  const got = [n && `${n} review${n === 1 ? "" : "s"}`, factsIn && `${factsIn} factoid${factsIn === 1 ? "" : "s"}`, editsIn && `${editsIn} edited card${editsIn === 1 ? "" : "s"}`, delIn && `${delIn} deletion${delIn === 1 ? "" : "s"}`, madeIn && `${madeIn} new card${madeIn === 1 ? "" : "s"} from splits`].filter(Boolean);
   S.libMsg = { text: got.length || add ? `Brought back ${got.length ? got.join(" and ") + ` from ${decks} deck${decks === 1 ? "" : "s"}` : "your XP"}${add ? `${got.length ? ", plus" : ":"} ${add} XP` : ""}.` : "Everything in that file was already here." };
   render();
 }
@@ -1246,7 +1407,11 @@ async function importPackText(text) {
   for (const d of pk.decks) {
     if (!d || !d.id || !Array.isArray(d.cards)) continue;
     const old = S.decks[d.id];
+    if (old && old.deleted && old.deleted.length) { const gone = new Set(old.deleted); d.cards = d.cards.filter(c => !gone.has(c.id)); d.deleted = old.deleted.slice(); }
     if (old) {
+      // cards made here (by splitting) that haven't been sent back yet
+      const ids = new Set(d.cards.map(c => c.id));
+      old.cards.filter(c => c.mine && !ids.has(c.id)).forEach(c => d.cards.push(c));
       // keep whatever was reviewed more recently, card by card
       const om = new Map(old.cards.map(c => [c.id, c]));
       d.cards.forEach(c => {
@@ -1283,6 +1448,8 @@ function progressJSON() {
     decks: Object.values(S.decks).map(d => ({ id: d.id, title: d.title,
       cards: Object.fromEntries(d.cards.filter(c => c.srs && c.srs.at).map(c => [c.id, c.srs])),
       facts: Object.fromEntries(d.cards.filter(c => c.factAt).map(c => [c.id, [c.fact || "", c.factAt]])),
+      deleted: d.deleted || [],
+      mine: d.cards.filter(c => c.mine),
       edits: Object.fromEntries(d.cards.filter(c => c.editAt).map(c => [c.id, { front: c.front, back: c.back, answer: c.answer, year: c.year || null, orig: c.orig || null, srcKey: c.srcKey || "", editAt: c.editAt }])) })),
   });
 }
@@ -1373,7 +1540,7 @@ function deckHTML() {
   const shown = d.cards.slice(0, 300);
   const list = shown.map(c => S.cardEdit === c.id ? `<div class="citem editing">${cardEditHTML(c)}</div>` : `<div class="citem"><span class="chip">${kindLabel(c)}</span>
       <div><div class="q">${md(c.front)}</div><div class="a">${md(c.kind === "cloze" || c.kind === "when" ? c.answer : trunc(c.back, 220))}</div>${c.fact ? `<div class="fline"><b>Factoid:</b> ${md(trunc(c.fact, 160))}</div>` : ""}${c.orig ? `<div class="fline">Edited by you</div>` : ""}</div>
-      <button class="x edit" data-act="card-edit" data-id="${c.id}" aria-label="Edit card">Edit</button></div>`).join("");
+      <div class="row" style="gap:0;flex-wrap:nowrap"><button class="x edit" data-act="card-edit" data-id="${c.id}" aria-label="Edit card">Edit</button><button class="x" data-act="card-del" data-id="${c.id}" aria-label="Delete card">×</button></div></div>`).join("");
   return `<div class="stage">
     <button class="back-link" data-act="home">← All decks</button>
     <div class="deck-head"><h1>${esc(d.title)}</h1><p class="muted">${st.total} cards${d.source ? " · from " + esc(d.source) : ""}</p></div>
@@ -1390,6 +1557,7 @@ function deckHTML() {
       <button class="mode" style="--mc:var(--info)" data-act="start-match" ${mn >= 3 ? "" : "disabled"}><strong>Match</strong><span class="big">${Math.min(6, mn)} pairs per round</span><span>${mn >= 3 ? "Each round comes from one stretch of the note." : "Needs a few cards with short answers."}</span></button>
       <button class="mode" style="--mc:var(--good)" data-act="start-timeline" ${tnYears >= 4 ? "" : "disabled"}><strong>Timeline</strong><span class="big">${tnYears >= 4 ? "5 events per round" : "No dates yet"}</span><span>${tnYears >= 4 ? "Tap the events in the order they happened." : "Needs events tied to at least four different years."}</span></button>
     </div>
+    ${leechPanelHTML(d)}
     <details class="panel browse" ${S.browseOpen ? "open" : ""}><summary>Browse ${st.total} cards</summary><div class="clist">${list}${d.cards.length > shown.length ? `<p class="muted">Showing the first ${shown.length}.</p>` : ""}</div></details>
     <div class="row"><button class="btn danger" data-act="del-deck">Remove from this phone</button></div>
   </div>`;
